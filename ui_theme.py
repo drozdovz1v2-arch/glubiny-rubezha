@@ -372,7 +372,13 @@ def draw_card(screen, fonts, card, x, y, w, h, playable, hovered, draw_type_icon
     if card.get("upgraded"):
         badge = pygame.Rect(x + w - pad - 28, y + h - footer_h - 20, 26, 18)
         pygame.draw.rect(screen, COLORS["gold"], badge, border_radius=5)
-        plus = fonts["sm"].render("+", True, (24, 16, 8))
+        level = card.get("upgrade_level") or 1
+        badge_text = "+" * min(level, 3) if level <= 3 else f"+{level}"
+        plus = fonts["sm"].render(badge_text, True, (24, 16, 8))
+        if plus.get_width() > badge.width - 4:
+            badge = pygame.Rect(x + w - pad - 34, y + h - footer_h - 20, 32, 18)
+            pygame.draw.rect(screen, COLORS["gold"], badge, border_radius=5)
+            plus = fonts["sm"].render(f"+{level}", True, (24, 16, 8))
         screen.blit(plus, plus.get_rect(center=badge.center))
 
     name_y = footer.y + config.sy(5)
@@ -798,6 +804,14 @@ def layout_reward_cards(count):
     return panel, sx, sy, cw, ch, gap
 
 
+def layout_bottom_action_bar(width=280, height=44, gap_above_footer=58):
+    """Action bar above footer hints — scales with screen height."""
+    bar_h = config.sy(height)
+    bar_w = config.sx(width)
+    y = config.SCREEN_HEIGHT - config.sy(gap_above_footer) - bar_h
+    return pygame.Rect(config.SCREEN_WIDTH // 2 - bar_w // 2, y, bar_w, bar_h)
+
+
 def layout_card_grid(count, top=118, bottom_pad=58, margin_x=40):
     """Card grid scaled to fill the screen between top bar and footer."""
     action_h = config.sy(52)
@@ -863,32 +877,80 @@ def _path_point(points, t):
     return (int(x1 + (x2 - x1) * local), int(y1 + (y2 - y1) * local))
 
 
+def _draw_path_arrow(screen, color, tip_x, tip_y, from_x, from_y, size=11):
+    angle = math.atan2(tip_y - from_y, tip_x - from_x)
+    left = angle + math.pi * 0.82
+    right = angle - math.pi * 0.82
+    tip = (int(tip_x), int(tip_y))
+    p2 = (int(tip_x + math.cos(left) * size), int(tip_y + math.sin(left) * size))
+    p3 = (int(tip_x + math.cos(right) * size), int(tip_y + math.sin(right) * size))
+    pygame.draw.polygon(screen, color, [tip, p2, p3])
+    pygame.draw.polygon(screen, lerp_color(color, (255, 255, 255), 0.35), [tip, p2, p3], 1)
+
+
 def draw_map_paths(screen, nodes, accent, anim=0.0, x_offset=0, y_offset=0):
+    from config import NODE_COLORS
+
+    node_by_id = {n["id"]: n for n in nodes}
     for a in nodes:
-        for b in nodes:
-            if b["id"] not in a["links"]:
+        for target_id in a["links"]:
+            b = node_by_id.get(target_id)
+            if not b:
                 continue
             active = b["available"] and not b["visited"]
-            col = accent if active else (48, 56, 72)
-            width = 5 if active else 2
+            visited_path = a["visited"] and b["visited"]
+            dest_type = b.get("type", "battle")
+            if active:
+                col = NODE_COLORS.get(dest_type, accent)
+            elif visited_path:
+                col = lerp_color(accent, (48, 56, 72), 0.55)
+            else:
+                col = (40, 46, 58)
+            width = 6 if active else (3 if visited_path else 2)
             ax, ay = a["x"] + x_offset, a["y"] + y_offset
             bx, by = b["x"] + x_offset, b["y"] + y_offset
             mx = (ax + bx) // 2
-            my = (ay + by) // 2 - config.sy(18)
+            my = (ay + by) // 2 - config.sy(22)
             points = [(ax, ay), (mx, my), (bx, by)]
             if active:
-                pygame.draw.lines(screen, lerp_color(accent, (0, 0, 0), 0.45), False, points, width + 2)
+                pygame.draw.lines(screen, lerp_color(col, (0, 0, 0), 0.5), False, points, width + 3)
             pygame.draw.lines(screen, col, False, points, width)
             if active:
                 for i, offset in enumerate((0.0, 0.33, 0.66)):
                     t = (offset + anim * 0.12 + i * 0.08) % 1.0
                     dot = _path_point(points, t)
-                    pygame.draw.circle(screen, lerp_color(accent, (255, 255, 255), 0.35), dot, 6)
-                    pygame.draw.circle(screen, accent, dot, 4)
-                pygame.draw.circle(screen, accent, (bx, by), 6)
-            elif a["visited"] and b["visited"]:
+                    pygame.draw.circle(screen, lerp_color(col, (255, 255, 255), 0.4), dot, 7)
+                    pygame.draw.circle(screen, col, dot, 5)
+                pre_tip = _path_point(points, 0.88)
+                _draw_path_arrow(screen, col, bx, by, pre_tip[0], pre_tip[1], size=config.sy(11))
+            elif visited_path:
                 mid = _path_point(points, 0.5)
                 pygame.draw.circle(screen, lerp_color(col, accent, 0.25), mid, 4)
+
+
+def draw_map_service_beacons(screen, nodes, fonts, x_offset=0, y_offset=0, pulse=0.0):
+    from config import NODE_COLORS
+
+    for node in nodes:
+        if node.get("type") not in ("rest", "shop") or node.get("visited"):
+            continue
+        col = NODE_COLORS.get(node["type"], COLORS["accent_warm"])
+        x = node["x"] + x_offset
+        y = node["y"] + y_offset
+        bob = int(math.sin(pulse * 1.8 + node["col"]) * 3)
+        beam_h = config.sy(28) + bob
+        beam = pygame.Surface((config.sx(18), beam_h), pygame.SRCALPHA)
+        for row in range(beam_h):
+            t = row / max(1, beam_h - 1)
+            alpha = int(90 * (1 - t))
+            pygame.draw.rect(beam, (*col, alpha), (0, row, beam.get_width(), 1))
+        screen.blit(beam, (x - beam.get_width() // 2, y - config.sy(34) - beam_h))
+        tag_w = config.sx(54 if node["type"] == "rest" else 48)
+        tag = pygame.Rect(x - tag_w // 2, y - config.sy(38) - beam_h, tag_w, config.sy(16))
+        draw_panel(screen, tag, fill=(10, 14, 22), border=col, radius=5, alpha=220, shadow=False)
+        label = "Привал" if node["type"] == "rest" else "Лавка"
+        txt = fonts["sm"].render(label, True, col)
+        screen.blit(txt, txt.get_rect(center=tag.center))
 
 
 def draw_map_grid_guides(screen, clip, game_map, x_offset=0, y_offset=0, accent=None):
@@ -949,8 +1011,8 @@ def draw_map_depth_guides(screen, fonts, clip, nodes, game_map=None, x_offset=0,
                 label, col = "Босс", lerp_color(COLORS["danger"], COLORS["text_dim"], 0.25)
             elif split_row is not None and row == split_row:
                 label, col = "Развилка", lerp_color(COLORS["accent_warm"], COLORS["text_dim"], 0.2)
-            elif row % 4 == 0:
-                label, col = str(row), COLORS["text_dim"]
+            elif row > 0 and row < max_row - 1 and row % 4 == 0:
+                label, col = "Услуги", lerp_color(COLORS["gold"], COLORS["text_dim"], 0.15)
             else:
                 continue
             txt = fonts["sm"].render(label, True, col)
@@ -1087,7 +1149,8 @@ def draw_card_tooltip(screen, fonts, card, mouse, draw_type_icon, energy=None):
         desc_y = panel.y + 58
     wrap_text(screen, fonts["sm"], card["desc"], panel.x + 12, desc_y, panel.width - 24, COLORS["text_dim"], line_h=16)
     if card.get("upgraded"):
-        up = fonts["sm"].render("Улучшено", True, COLORS["gold"])
+        level = card.get("upgrade_level") or 1
+        up = fonts["sm"].render(f"Улучшено · ур. {level}", True, COLORS["gold"])
         screen.blit(up, (panel.x + 12, panel.bottom - 22))
 
 

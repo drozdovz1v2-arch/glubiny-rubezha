@@ -7,7 +7,6 @@ import pygame
 
 _SAMPLE_RATE = 22050
 
-# Пентатоника — мягкие интервалы без диссонанса.
 _PENTATONIC_MAJOR = (1.0, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2.0, 9 / 4, 5 / 2)
 _PENTATONIC_MINOR = (1.0, 6 / 5, 4 / 3, 3 / 2, 9 / 5, 2.0, 12 / 5, 3.0)
 
@@ -42,73 +41,182 @@ def _make_chord(freqs, duration_ms, volume=0.16):
     return pygame.mixer.Sound(buffer=buf)
 
 
-def _scale_from_root(root_hz, ratios, indices):
-    return [root_hz * ratios[i % len(ratios)] for i in indices]
+def _scale_freq(root_hz, ratios, index):
+    return root_hz * ratios[index % len(ratios)]
 
 
-def _soft_clip(value, drive=1.05):
+def _soft_clip(value, drive=0.92):
     return math.tanh(value * drive)
 
 
-def _make_ambient_music(
+def _loop_crossfade(buf, sample_rate, xfade_sec=5.0):
+    xfade = min(len(buf) // 4, int(sample_rate * xfade_sec))
+    if xfade < 64:
+        return buf
+    n = len(buf)
+    for i in range(xfade):
+        t = i / max(1, xfade - 1)
+        blend = t * t * (3 - 2 * t)
+        tail = n - xfade + i
+        mixed = int(buf[i] * blend + buf[tail] * (1 - blend))
+        buf[i] = mixed
+        buf[tail] = mixed
+    return buf
+
+
+def _lowpass(buf, passes=1):
+    if passes <= 0 or len(buf) < 3:
+        return buf
+    for _ in range(passes):
+        prev = buf[0]
+        for i in range(1, len(buf)):
+            cur = buf[i]
+            buf[i] = int(prev * 0.42 + cur * 0.58)
+            prev = cur
+    return buf
+
+
+def _note_env(progress, attack=0.18, release=0.32):
+    if progress < attack:
+        return progress / max(attack, 0.001)
+    if progress > 1.0 - release:
+        return max(0.0, (1.0 - progress) / max(release, 0.001))
+    return 1.0
+
+
+def _build_phrases(root_hz, ratios, phrases, duration_sec, bpm=38):
+    """Редкие ноты с паузами — без постоянного арпеджio."""
+    beat = 60.0 / bpm
+    events = []
+    cursor = duration_sec * 0.06
+    gap_range = (beat * 1.6, beat * 3.4)
+    pr = 0.0
+    for phrase in phrases:
+        for note_idx, hold_beats in phrase:
+            if cursor >= duration_sec * 0.92:
+                break
+            hold = beat * hold_beats
+            freq = _scale_freq(root_hz * 2, ratios, note_idx)
+            events.append((cursor, hold, freq))
+            cursor += hold + gap_range[0] + (gap_range[1] - gap_range[0]) * pr
+            pr = (pr * 0.618 + 0.382) % 1.0
+        cursor += beat * 2.2
+    return events
+
+
+def _make_ambient_piece(
     root_hz,
     scale_ratios,
-    melody_pattern,
-    duration_sec=22,
-    volume=0.042,
-    bpm=46,
-    pad_partials=None,
+    phrases,
+    duration_sec=68,
+    volume=0.034,
+    bpm=38,
+    pad_mix=0.78,
+    melody_mix=0.14,
+    xfade_sec=5.5,
     sample_rate=_SAMPLE_RATE,
 ):
-    """Тёплый ambient-пад с медленной мелодией в пентатонике."""
-    pad_partials = pad_partials or (
-        (1.0, 0.0, 0.46),
-        (1.004, 0.4, 0.32),
-        (1.5, 0.15, 0.24),
-        (2.0, 0.2, 0.14),
-        (2.5, 0.55, 0.08),
-    )
-    melody = _scale_from_root(root_hz * 2, scale_ratios, melody_pattern)
+    """Длинный ambient с бесшовным зацикливанием и редкой мелодией."""
     n_samples = max(1, int(sample_rate * duration_sec))
     buf = array.array("h", [0] * n_samples)
-    fade_samples = int(sample_rate * 1.8)
-    beat_len = 60.0 / bpm
+    events = _build_phrases(root_hz, scale_ratios, phrases, duration_sec, bpm=bpm)
+
+    pad_freqs = []
+    for k in (1, 2, 3, 5):
+        cycles = max(1, round(k * root_hz * duration_sec))
+        pad_freqs.append((cycles / duration_sec, 0.34 / k, k * 0.7))
 
     for i in range(n_samples):
         t = i / sample_rate
         pad = 0.0
-        for mult, phase, amp in pad_partials:
-            freq = root_hz * mult * (1.0 + 0.0025 * math.sin(2 * math.pi * 0.07 * t + phase))
-            pad += amp * math.sin(2 * math.pi * freq * t + phase)
+        for freq, amp, phase in pad_freqs:
+            wobble = 1.0 + 0.0018 * math.sin(2 * math.pi * 0.023 * t + phase)
+            pad += amp * math.sin(2 * math.pi * freq * wobble * t + phase)
 
-        step = int(t / beat_len) % len(melody)
-        local = (t % beat_len) / beat_len
-        note_env = 0.35 + 0.65 * (0.5 - 0.5 * math.cos(2 * math.pi * local))
-        next_step = (step + 1) % len(melody)
-        blend = local * local * (3 - 2 * local)
-        mel_freq = melody[step] * (1 - blend) + melody[next_step] * blend
-        melody_wave = 0.22 * note_env * math.sin(2 * math.pi * mel_freq * t)
+        melody = 0.0
+        for start, hold, freq in events:
+            if t < start or t > start + hold:
+                continue
+            local = (t - start) / max(hold, 0.001)
+            env = _note_env(local)
+            partial = math.sin(2 * math.pi * freq * t)
+            partial += 0.28 * math.sin(2 * math.pi * freq * 2.01 * t)
+            melody += melody_mix * env * partial
 
-        breath = 0.76 + 0.24 * math.sin(2 * math.pi * 0.035 * t)
-        shimmer = 1.0 + 0.06 * math.sin(2 * math.pi * 0.19 * t + 0.8)
-        wave = _soft_clip((pad / 1.35 + melody_wave) * breath * shimmer)
+        breath = 0.84 + 0.16 * math.sin(2 * math.pi * t / duration_sec)
+        wave = _soft_clip((pad * pad_mix + melody) * breath)
+        buf[i] = max(-32767, min(32767, int(volume * 32767 * wave)))
 
-        env = 1.0
-        if i < fade_samples:
-            env = i / fade_samples
-        elif i > n_samples - fade_samples:
-            env = max(0.0, (n_samples - i) / fade_samples)
-
-        sample = int(volume * 32767 * env * wave)
-        buf[i] = max(-32767, min(32767, sample))
+    buf = _lowpass(buf, passes=1)
+    buf = _loop_crossfade(buf, sample_rate, xfade_sec=xfade_sec)
     return pygame.mixer.Sound(buffer=buf)
 
 
-def _make_ambient_loop(base_freq, harmonics, duration_sec=14, volume=0.07, arp=None, sample_rate=_SAMPLE_RATE):
-    """Сохранено для совместимости — делегирует в новый генератор."""
-    pattern = tuple(range(len(arp or (0, 2, 4, 2))))
-    ratios = _PENTATONIC_MINOR if base_freq < 120 else _PENTATONIC_MAJOR
-    return _make_ambient_music(base_freq, ratios, pattern, duration_sec, volume * 0.65, bpm=44)
+_AMBIENT_SPECS = {
+    "menu": dict(
+        root_hz=130.81, scale_ratios=_PENTATONIC_MAJOR,
+        phrases=[
+            [(0, 2.5), (2, 2.0), (4, 3.0)],
+            [(3, 2.0), (1, 2.5), (4, 2.0)],
+            [(2, 3.0), (0, 2.0), (3, 2.5)],
+        ],
+        duration_sec=72, volume=0.032, bpm=36,
+    ),
+    "forest": dict(
+        root_hz=98.0, scale_ratios=_PENTATONIC_MINOR,
+        phrases=[
+            [(0, 2.5), (1, 2.0), (3, 3.0)],
+            [(2, 2.5), (4, 2.0), (1, 2.5)],
+            [(3, 2.0), (0, 3.0), (2, 2.0)],
+        ],
+        duration_sec=76, volume=0.033, bpm=34,
+    ),
+    "desert": dict(
+        root_hz=87.31, scale_ratios=_PENTATONIC_MINOR,
+        phrases=[
+            [(0, 2.0), (2, 2.5), (1, 2.0)],
+            [(3, 2.5), (2, 2.0), (4, 2.5)],
+            [(1, 2.0), (0, 3.0)],
+        ],
+        duration_sec=68, volume=0.031, bpm=38,
+    ),
+    "snow": dict(
+        root_hz=146.83, scale_ratios=_PENTATONIC_MAJOR,
+        phrases=[
+            [(0, 3.0), (2, 2.0), (4, 2.5)],
+            [(5, 2.0), (3, 2.5), (1, 2.0)],
+            [(2, 2.5), (4, 3.0)],
+        ],
+        duration_sec=80, volume=0.030, bpm=32, melody_mix=0.12,
+    ),
+    "ruins": dict(
+        root_hz=92.5, scale_ratios=_PENTATONIC_MINOR,
+        phrases=[
+            [(0, 2.5), (1, 2.0), (2, 3.0)],
+            [(4, 2.0), (3, 2.5), (1, 2.0)],
+            [(2, 2.5), (0, 2.0)],
+        ],
+        duration_sec=74, volume=0.032, bpm=35,
+    ),
+    "combat": dict(
+        root_hz=103.83, scale_ratios=_PENTATONIC_MINOR,
+        phrases=[
+            [(0, 1.8), (1, 1.5), (0, 1.8)],
+            [(2, 1.5), (1, 2.0), (3, 1.5)],
+            [(1, 1.8), (2, 1.5)],
+        ],
+        duration_sec=58, volume=0.034, bpm=42, pad_mix=0.82, melody_mix=0.10,
+    ),
+    "shop": dict(
+        root_hz=116.54, scale_ratios=_PENTATONIC_MAJOR,
+        phrases=[
+            [(0, 2.0), (2, 2.5), (3, 2.0)],
+            [(4, 2.0), (2, 2.0), (1, 2.5)],
+            [(3, 2.5), (1, 2.0)],
+        ],
+        duration_sec=64, volume=0.031, bpm=40,
+    ),
+}
 
 
 class Audio:
@@ -122,12 +230,23 @@ class Audio:
         self.sfx_volume = sfx_volume
         try:
             if not pygame.mixer.get_init():
-                pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
-            self._build()
+                pygame.mixer.init(frequency=_SAMPLE_RATE, size=-16, channels=1, buffer=512)
+            self._build_sfx()
         except pygame.error:
             self.enabled = False
 
-    def _build(self):
+    def _get_ambient(self, track):
+        sound = self._ambient.get(track)
+        if sound is not None:
+            return sound
+        spec = _AMBIENT_SPECS.get(track)
+        if not spec:
+            return None
+        sound = _make_ambient_piece(**spec)
+        self._ambient[track] = sound
+        return sound
+
+    def _build_sfx(self):
         self._sounds = {
             "ui": _make_tone(520, 55, 0.14),
             "card": _make_tone(660, 70, 0.16),
@@ -144,38 +263,6 @@ class Audio:
             "achievement": _make_chord([523, 659, 784, 988], 220, 0.2),
             "buzz": _make_tone(180, 40, 0.1),
         }
-        self._ambient = {
-            "menu": _make_ambient_music(
-                130.81, _PENTATONIC_MAJOR, (0, 2, 4, 3, 2, 1, 3, 4),
-                duration_sec=24, volume=0.040, bpm=42,
-            ),
-            "forest": _make_ambient_music(
-                98.0, _PENTATONIC_MINOR, (0, 1, 3, 2, 4, 3, 1, 0),
-                duration_sec=26, volume=0.044, bpm=44,
-            ),
-            "desert": _make_ambient_music(
-                87.31, _PENTATONIC_MINOR, (0, 2, 1, 3, 2, 4, 2, 1),
-                duration_sec=22, volume=0.041, bpm=48,
-            ),
-            "snow": _make_ambient_music(
-                146.83, _PENTATONIC_MAJOR, (0, 2, 4, 5, 4, 2, 3, 1),
-                duration_sec=28, volume=0.038, bpm=40,
-                pad_partials=((1.0, 0.0, 0.42), (1.003, 0.5, 0.30), (1.5, 0.2, 0.22), (2.0, 0.35, 0.12)),
-            ),
-            "ruins": _make_ambient_music(
-                92.5, _PENTATONIC_MINOR, (0, 1, 2, 4, 3, 2, 1, 3),
-                duration_sec=24, volume=0.042, bpm=43,
-            ),
-            "combat": _make_ambient_music(
-                103.83, _PENTATONIC_MINOR, (0, 1, 0, 2, 1, 3, 2, 1),
-                duration_sec=18, volume=0.048, bpm=54,
-                pad_partials=((1.0, 0.0, 0.50), (1.006, 0.25, 0.34), (1.5, 0.1, 0.26), (2.0, 0.45, 0.16)),
-            ),
-            "shop": _make_ambient_music(
-                116.54, _PENTATONIC_MAJOR, (0, 2, 3, 2, 4, 3, 1, 2),
-                duration_sec=20, volume=0.039, bpm=50,
-            ),
-        }
 
     def play(self, name):
         if not self.enabled:
@@ -191,7 +278,7 @@ class Audio:
         self.music_volume = clamp(music_volume, 0.0, 1.0)
         self.sfx_volume = clamp(sfx_volume, 0.0, 1.0)
         if self._current_track:
-            ambient = self._ambient.get(self._current_track)
+            ambient = self._get_ambient(self._current_track)
             if ambient:
                 ambient.set_volume(self.music_volume)
 
@@ -206,7 +293,7 @@ class Audio:
         self._current_track = track
         if not track:
             return
-        ambient = self._ambient.get(track)
+        ambient = self._get_ambient(track)
         if ambient:
             ambient.set_volume(self.music_volume)
             self._music_sound = ambient.play(-1)

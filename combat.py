@@ -274,7 +274,7 @@ class CombatState:
         self.hand.pop(index)
         self.discard.append(card)
         self.current_card = card
-        play_card_effect(card["effect"], CombatContext(self))
+        play_card_effect(card["effect"], CombatContext(self), card)
         if card.get("type") == "curse":
             relic_on_curse_played(self.relics, self)
         self.current_card = None

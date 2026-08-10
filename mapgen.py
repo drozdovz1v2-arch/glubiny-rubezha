@@ -179,10 +179,11 @@ EVENTS = [
 ]
 
 
-MAP_ROWS = 14
-MAP_COLS = 7
+MAP_ROWS = 18
+MAP_COLS = 9
 MAP_EASY_UNTIL = 2
 MAP_SPLIT_ROW = 3
+MAP_SERVICE_STEP = 4
 
 
 def map_node_tier(row):
@@ -194,11 +195,12 @@ def map_node_tier(row):
 
 # Шаблоны колонок для ровного распределения узлов (минимум 2 клетки между соседями).
 _ROW_SLOT_TEMPLATES = {
-    1: [(3,)],
-    2: [(1, 5), (2, 5), (1, 4), (2, 4), (0, 4), (2, 6)],
-    3: [(0, 3, 6), (1, 3, 5), (0, 2, 5), (1, 4, 6), (0, 2, 4), (2, 4, 6)],
-    4: [(0, 2, 4, 6), (1, 2, 4, 6), (0, 2, 3, 5), (0, 1, 4, 6), (1, 3, 4, 6)],
-    5: [(0, 1, 3, 5, 6), (0, 2, 3, 4, 6), (1, 2, 3, 4, 5)],
+    1: [(4,)],
+    2: [(2, 6), (3, 6), (1, 5), (2, 5), (3, 7), (1, 7)],
+    3: [(1, 4, 7), (2, 4, 6), (0, 3, 6), (1, 5, 7), (2, 5, 7), (0, 4, 8)],
+    4: [(0, 2, 5, 8), (1, 3, 5, 7), (0, 2, 4, 6), (1, 3, 6, 8), (0, 3, 5, 8)],
+    5: [(0, 2, 4, 6, 8), (1, 2, 4, 6, 7), (0, 1, 4, 7, 8), (1, 3, 4, 5, 7)],
+    6: [(0, 1, 3, 5, 7, 8), (0, 2, 3, 5, 6, 8), (1, 2, 4, 5, 6, 7)],
 }
 
 
@@ -208,10 +210,25 @@ def _row_node_count(row, rows):
     if row <= MAP_EASY_UNTIL:
         return 2
     if row == MAP_SPLIT_ROW:
-        return rand_int(3, 4)
-    if row > 2 and row % 5 == 0:
+        return rand_int(4, 5)
+    if row >= rows - 3:
         return rand_int(2, 3)
-    return rand_int(2, 4)
+    return rand_int(3, 5)
+
+
+def _service_row(row, rows):
+    return MAP_SERVICE_STEP <= row < rows - 2 and row % MAP_SERVICE_STEP == 0
+
+
+def _pick_service_type():
+    roll = random.random()
+    if roll < 0.38:
+        return "rest"
+    if roll < 0.72:
+        return "shop"
+    if roll < 0.88:
+        return "event"
+    return "battle"
 
 
 def _pick_row_slots(cols, count):
@@ -241,6 +258,7 @@ def generate_map(act_index=0):
             else:
                 line.append(None)
         grid.append(line)
+    _boost_service_nodes(grid)
     _link_nodes(grid)
     return {
         "grid": grid,
@@ -257,14 +275,16 @@ def _create_node(row, col, act, total_rows):
     node_type = "battle"
     if row == total_rows - 1:
         node_type = "boss"
-    elif row > 2 and row % 5 == 0:
-        node_type = pick(["rest", "shop", "event"])
+    elif _service_row(row, total_rows):
+        node_type = _pick_service_type()
     elif tier == "hard" and random.random() < get_difficulty()["elite_node_chance"]:
         node_type = "elite"
     elif tier == "hard" and random.random() < get_difficulty()["rest_node_chance"]:
         node_type = "rest"
-    elif tier == "hard" and random.random() < 0.1:
-        node_type = pick(["shop", "event"])
+    elif tier == "hard" and random.random() < get_difficulty().get("shop_node_chance", 0.12):
+        node_type = "shop"
+    elif tier == "hard" and random.random() < 0.12:
+        node_type = "event"
     return {
         "id": f"{act}_{row}_{col}",
         "row": row,
@@ -274,9 +294,31 @@ def _create_node(row, col, act, total_rows):
         "links": [],
         "visited": False,
         "available": row == 0,
+        "service": node_type in ("rest", "shop"),
         "x": 0,
         "y": 0,
     }
+
+
+def _boost_service_nodes(grid):
+    rows = len(grid)
+    for row in range(rows):
+        nodes = [n for n in grid[row] if n]
+        if not nodes:
+            continue
+        for node in nodes:
+            if node["type"] in ("rest", "shop"):
+                node["service"] = True
+        if row < 3 or row >= rows - 2:
+            continue
+        if not _service_row(row, rows):
+            continue
+        services = [n for n in nodes if n["type"] in ("rest", "shop")]
+        if len(services) >= 1:
+            continue
+        target = min(nodes, key=lambda n: abs(n["col"] - (MAP_COLS // 2)))
+        target["type"] = pick(["rest", "rest", "shop", "shop"])
+        target["service"] = True
 
 
 def _link_nodes(grid):
@@ -286,17 +328,23 @@ def _link_nodes(grid):
         if not current or not nxt:
             continue
         for node in current:
-            candidates = [n for n in nxt if abs(n["col"] - node["col"]) <= 1]
-            if not candidates:
-                candidates = sorted(nxt, key=lambda n: abs(n["col"] - node["col"]))[:2]
-            else:
-                candidates = sorted(candidates, key=lambda n: (abs(n["col"] - node["col"]), n["col"]))
+            wide = [n for n in nxt if abs(n["col"] - node["col"]) <= 2]
+            candidates = wide or sorted(nxt, key=lambda n: abs(n["col"] - node["col"]))[:3]
+            candidates = sorted(candidates, key=lambda n: (abs(n["col"] - node["col"]), n["col"]))
             link_count = 1
-            if len(candidates) > 1 and random.random() < 0.42:
-                link_count = 2
+            if len(candidates) > 1:
+                roll = random.random()
+                if roll < 0.58:
+                    link_count = 2
+                elif roll < 0.78 and len(candidates) > 2:
+                    link_count = 3
             targets = candidates[:link_count]
-            if link_count == 2 and len(candidates) > 2 and random.random() < 0.35:
+            if link_count >= 2 and len(candidates) > link_count and random.random() < 0.45:
                 targets = [candidates[0], pick(candidates[1:])]
+                if link_count == 3 and len(candidates) > 2:
+                    extra = [c for c in candidates[1:] if c not in targets]
+                    if extra:
+                        targets.append(pick(extra))
             for target in targets:
                 if target["id"] not in node["links"]:
                     node["links"].append(target["id"])

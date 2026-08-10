@@ -49,6 +49,7 @@ from ui_theme import (
     draw_hand_tray,
     draw_map_node,
     draw_map_paths,
+    draw_map_service_beacons,
     draw_panel,
     draw_potion_bar,
     draw_potion_codex,
@@ -61,6 +62,7 @@ from ui_theme import (
     layout_action_buttons,
     layout_hand_cards,
     layout_reward_cards,
+    layout_bottom_action_bar,
     layout_shop_cards,
     MAP_LAYOUT,
     draw_volume_slider,
@@ -112,6 +114,7 @@ class App:
         self.combat_outro_sfx = False
         self.event_popup = None
         self.confirm_new_run = False
+        self.confirm_to_menu = False
         self.pending_daily = False
         self.apply_display_mode()
 
@@ -289,6 +292,9 @@ class App:
             if self.card_overlay:
                 self.close_card_overlay()
                 return
+            if self.confirm_to_menu:
+                self.confirm_to_menu = False
+                return
             if self.confirm_new_run:
                 self.confirm_new_run = False
                 return
@@ -307,9 +313,16 @@ class App:
             if screen == SHOP:
                 self.leave_shop()
                 return
+            if screen in (MAP, REWARD, RELIC_REWARD, REST, EVENT, ACT_TRANSITION):
+                self.confirm_to_menu = True
+                return
             if screen == MENU:
                 self.quit_game()
                 return
+        if self.confirm_to_menu:
+            if key in (pygame.K_RETURN, pygame.K_SPACE):
+                self.go_to_menu()
+            return
         if self.game.screen == MENU and key in (pygame.K_RETURN, pygame.K_SPACE):
             if self.confirm_new_run:
                 self.do_new_run()
@@ -713,7 +726,10 @@ class App:
         self.draw_footer_hint()
         if self.card_overlay:
             self.draw_card_overlay(accent)
-        if self.hovered_card:
+        if self.confirm_to_menu:
+            self.buttons.clear()
+            self.draw_confirm_to_menu()
+        elif self.hovered_card:
             draw_card_tooltip(self.screen, self.fonts, self.hovered_card, self.mouse, draw_card_type_icon, energy=self.hovered_card_energy)
 
     def open_card_overlay(self, title, cards, on_pick=None):
@@ -747,16 +763,16 @@ class App:
     def draw_footer_hint(self):
         hints = {
             MENU: "Enter — продолжить или новый забег  ·  Esc — выход",
-            MAP: "Клик по подсвеченному узлу — идти  ·  перетаскивание — прокрутка карты",
+            MAP: "Клик по подсвеченному узлу — идти  ·  перетаскивание — прокрутка  ·  Esc — в меню  ·  оранж./голуб. — привал/лавка",
             COMBAT: "1–9 — карта  ·  Z/X/C — зелья  ·  Tab — сменить цель  ·  ход передаётся автоматически" if not (self.game.combat and not self.game.combat.is_player_turn) else (self.game.combat.action_banner or "Ход врага..."),
-            REWARD: "1–3 — выбрать карту  ·  S — пропустить",
-            RELIC_REWARD: "1–3 — взять реликвию  ·  S — отказаться",
-            REST: "1 — лечение  ·  2 — улучшение  ·  3 — удаление  ·  4 — сварить зелье (−12 HP)",
+            REWARD: "1–3 — выбрать карту  ·  S — пропустить  ·  Esc — в меню",
+            RELIC_REWARD: "1–3 — взять реликвию  ·  S — отказаться  ·  Esc — в меню",
+            REST: "1 — лечение  ·  2 — улучшение  ·  3 — удаление  ·  4 — сварить зелье (−12 HP)  ·  Esc — в меню",
             REST_UPGRADE: "Кликни карту для усиления — наведи для превью  ·  Esc — назад",
             REST_REMOVE: "Выбери карту — затем подтверди удаление  ·  Esc — назад",
             SHOP: "1–6 — купить  ·  H — лечение  ·  R — удалить  ·  Q/Esc — уйти",
-            EVENT: "1–3 — выбор  ·  наведи для подсказки",
-            ACT_TRANSITION: "Enter — вперёд в новый акт",
+            EVENT: "1–3 — выбор  ·  наведи для подсказки  ·  Esc — в меню",
+            ACT_TRANSITION: "Enter — вперёд в новый акт  ·  Esc — в меню",
             HELP: "Esc — назад в меню",
             SETTINGS: "Esc — назад в меню",
             VICTORY: "Enter — новый забег  ·  M — меню",
@@ -777,6 +793,36 @@ class App:
         draw_panel(self.screen, panel, fill=(10, 14, 22), border=COLORS["panel_border"], radius=12, alpha=180, shadow=False)
         txt = self.fonts["sm"].render(text, True, COLORS["text_dim"])
         self.screen.blit(txt, txt.get_rect(center=panel.center))
+
+    def draw_confirm_to_menu(self):
+        dim = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 160))
+        self.screen.blit(dim, (0, 0))
+        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - config.sx(220), config.SCREEN_HEIGHT // 2 - config.sy(70), config.sx(440), config.sy(140))
+        draw_panel(self.screen, panel, fill=(14, 18, 28), border=COLORS["accent"], radius=16, alpha=240, shadow=True)
+        title = self.fonts["md"].render("Выйти в главное меню?", True, COLORS["text"])
+        self.screen.blit(title, title.get_rect(center=(panel.centerx, panel.y + config.sy(36))))
+        hint = self.fonts["sm"].render("Забег сохранится — можно продолжить позже", True, COLORS["text_dim"])
+        self.screen.blit(hint, hint.get_rect(center=(panel.centerx, panel.y + config.sy(68))))
+        draw_button(
+            self.screen, self.fonts,
+            pygame.Rect(panel.centerx - config.sx(150), panel.bottom - config.sy(52), config.sx(140), config.sy(40)),
+            "В меню", self.mouse, self.buttons, self.go_to_menu,
+        )
+        draw_button(
+            self.screen, self.fonts,
+            pygame.Rect(panel.centerx + config.sx(10), panel.bottom - config.sy(52), config.sx(140), config.sy(40)),
+            "Отмена", self.mouse, self.buttons,
+            lambda: setattr(self, "confirm_to_menu", False),
+            primary=False,
+        )
+
+    def go_to_menu(self):
+        self.audio.play("ui")
+        self.game._persist()
+        self.game.save()
+        self.game.to_menu()
+        self.confirm_to_menu = False
 
     def draw_tutorial_overlay(self):
         tut = self.game.tutorial
@@ -1057,7 +1103,7 @@ class App:
             "Enter — продолжить/новый забег. M — меню с экрана победы.",
             "Элиты и боссы опасны. Привалов мало — лечись экономно.",
             "Элиты и боссы дают реликвии — пассивные артефакты забега.",
-            "На привале можно улучшить или удалить карту — один выбор за визит.",
+            "На привале можно улучшить или удалить карту — один выбор за визит. Карту можно улучшать снова на следующих привалах.",
             "«Рубеж» — проще, «Суровый Рубеж» — для опытных, «Кошмар» — экстрим. Смена в меню.",
             "Забег сохраняется автоматически — «Продолжить» в меню.",
         ]
@@ -1233,6 +1279,7 @@ class App:
         self.screen.set_clip(clip)
         draw_map_grid_guides(self.screen, clip, run["map"], x_off, y_off, accent)
         draw_map_depth_guides(self.screen, self.fonts, clip, nodes, run["map"], x_off, y_off, accent)
+        draw_map_service_beacons(self.screen, nodes, self.fonts, x_off, y_off, self.anim)
         draw_map_paths(self.screen, nodes, accent, self.anim, x_offset=x_off, y_offset=y_off)
 
         node_rects = []
@@ -1253,13 +1300,16 @@ class App:
                 color = node_color
             elif node["visited"]:
                 color = tuple(int(c * 0.55 + 40) for c in node_color)
+            elif ntype in ("rest", "shop"):
+                color = tuple(min(255, int(c * 0.65 + 55)) for c in node_color)
             else:
                 color = tuple(int(c * 0.35 + 28) for c in node_color)
+            show_label = active or hovered or ntype in ("rest", "shop", "boss")
             nr = draw_map_node(
                 self.screen, nx, ny, ntype,
                 color, active, node["visited"], self.anim,
                 draw_node_icon, hovered=hovered,
-                fonts=self.fonts, show_label=active or hovered,
+                fonts=self.fonts, show_label=show_label,
             )
             if is_here:
                 pulse = int(32 + math.sin(self.anim * 2.2) * 4)
@@ -1568,9 +1618,9 @@ class App:
             for r in rects[1:]:
                 box = box.union(r)
             self.highlight_rects["reward_cards"] = box
-        actions = pygame.Rect(config.SCREEN_WIDTH // 2 - 140, 530, 280, 44)
+        actions = layout_bottom_action_bar()
         draw_section_panel(self.screen, actions, "Решение", self.fonts, accent=COLORS["panel_border"], alpha=200)
-        draw_button(self.screen, self.fonts, pygame.Rect(actions.centerx - 110, actions.y + 4, 220, 36), "Пропустить", self.mouse, self.buttons, lambda: self.game.pick_reward(-1), primary=False)
+        draw_button(self.screen, self.fonts, pygame.Rect(actions.centerx - config.sx(110), actions.y + 4, config.sx(220), config.sy(36)), "Пропустить", self.mouse, self.buttons, lambda: self.game.pick_reward(-1), primary=False)
 
     def draw_rest(self, accent):
         from cards import removable_cards
@@ -1686,7 +1736,7 @@ class App:
     def draw_rest_upgrade(self, accent):
         from collections import Counter
 
-        draw_top_bar(self.screen, self.fonts, "Кузница", "Выбери одну карту для усиления", stats=self.run_stats(self.game.run), accent=COLORS["accent_warm"])
+        draw_top_bar(self.screen, self.fonts, "Кузница", "Выбери карту — можно усилить повторно на других привалах", stats=self.run_stats(self.game.run), accent=COLORS["accent_warm"])
         self.draw_deck_button(self.game.run)
         cards = self.game.upgrade_choices
         id_counts = Counter(c["id"] for c in self.game.run.get("deck", []))
@@ -1767,11 +1817,11 @@ class App:
                 "Взять", self.mouse, self.buttons,
                 lambda idx=i: self.pick_relic_reward(idx),
             )
-        actions = pygame.Rect(config.SCREEN_WIDTH // 2 - 140, 530, 280, 44)
+        actions = layout_bottom_action_bar()
         draw_section_panel(self.screen, actions, "Решение", self.fonts, accent=COLORS["panel_border"], alpha=200)
         draw_button(
             self.screen, self.fonts,
-            pygame.Rect(actions.centerx - 110, actions.y + 4, 220, 36),
+            pygame.Rect(actions.centerx - config.sx(110), actions.y + 4, config.sx(220), config.sy(36)),
             "Отказаться", self.mouse, self.buttons,
             lambda: self.pick_relic_reward(-1),
             primary=False,
@@ -1833,11 +1883,18 @@ class App:
                 slot = pygame.Rect(x, sy, cw, ch)
                 hovered = slot.collidepoint(self.mouse)
                 draw_panel(self.screen, slot, fill=(20, 16, 28), border=info.get("color", COLORS["gold"]), radius=12, alpha=220 if hovered else 180, shadow=hovered)
-                draw_relic_icon(self.screen, x + cw // 2 - 28, sy + 24, 56, rid)
-                name = self.fonts["card"].render(info.get("name", rid)[:16], True, COLORS["text"])
-                self.screen.blit(name, name.get_rect(center=(x + cw // 2, sy + ch - 36)))
                 tag = self.fonts["sm"].render("Артефакт", True, COLORS["gold"])
-                self.screen.blit(tag, tag.get_rect(center=(x + cw // 2, sy + 12)))
+                self.screen.blit(tag, tag.get_rect(center=(x + cw // 2, sy + 10)))
+                draw_relic_icon(self.screen, x + cw // 2 - 24, sy + 22, 48, rid)
+                name_txt = info.get("name", rid)
+                if len(name_txt) > 14:
+                    name_txt = name_txt[:13] + "…"
+                name = self.fonts["card"].render(name_txt, True, info.get("color", COLORS["text"]))
+                self.screen.blit(name, name.get_rect(center=(x + cw // 2, sy + 78)))
+                wrap_text(
+                    self.screen, self.fonts["sm"], info.get("desc", ""),
+                    x + 10, sy + 96, cw - 20, COLORS["text_dim"], line_h=config.sy(14),
+                )
                 if can:
                     self.buttons.add(slot, try_buy)
                 shop_rects.append(slot.inflate(0, 8))
@@ -1847,11 +1904,18 @@ class App:
                 slot = pygame.Rect(x, sy, cw, ch)
                 hovered = slot.collidepoint(self.mouse)
                 draw_panel(self.screen, slot, fill=(16, 20, 28), border=info.get("color", accent), radius=12, alpha=220 if hovered else 180, shadow=hovered)
-                draw_potion_icon(self.screen, x + cw // 2 - 28, sy + 24, 56, pid)
-                name = self.fonts["card"].render(info.get("name", pid)[:16], True, COLORS["text"])
-                self.screen.blit(name, name.get_rect(center=(x + cw // 2, sy + ch - 36)))
                 tag = self.fonts["sm"].render("Зелье", True, COLORS["success"])
-                self.screen.blit(tag, tag.get_rect(center=(x + cw // 2, sy + 12)))
+                self.screen.blit(tag, tag.get_rect(center=(x + cw // 2, sy + 10)))
+                draw_potion_icon(self.screen, x + cw // 2 - 24, sy + 22, 48, pid)
+                name_txt = info.get("name", pid)
+                if len(name_txt) > 14:
+                    name_txt = name_txt[:13] + "…"
+                name = self.fonts["card"].render(name_txt, True, COLORS["text"])
+                self.screen.blit(name, name.get_rect(center=(x + cw // 2, sy + 78)))
+                wrap_text(
+                    self.screen, self.fonts["sm"], info.get("desc", ""),
+                    x + 10, sy + 96, cw - 20, COLORS["text_dim"], line_h=config.sy(14),
+                )
                 if can:
                     from potions import can_add_potion
                     if can_add_potion(self.game.run):

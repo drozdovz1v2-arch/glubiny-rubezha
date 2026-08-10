@@ -1,4 +1,4 @@
-from cards import can_add_card_to_deck, deck_card_ids, removable_cards, roll_card_rewards, shop_removal_price, starter_deck, sync_discovered_cards, unique_upgradable_cards, upgrade_card
+from cards import can_add_card_to_deck, deck_card_ids, normalize_card, removable_cards, roll_card_rewards, shop_removal_price, starter_deck, sync_discovered_cards, unique_upgradable_cards, upgrade_card
 from combat import CombatState
 from config import ACTS, clear_run_save, daily_seed, load_meta, save_meta, save_run_state
 from difficulty import get_difficulty, gold_reward, init_difficulty
@@ -89,6 +89,8 @@ class Game:
         layout_map(self.run["map"])
         sync_discovered_relics(self.meta, self.run.get("relics", []))
         sync_discovered_cards(self.meta, self.run.get("deck", []))
+        for card in self.run.get("deck", []):
+            normalize_card(card)
         return True
 
     def _record_run_stats(self, won):
