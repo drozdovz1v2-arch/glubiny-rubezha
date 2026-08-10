@@ -22,6 +22,11 @@ def _sand_tomb_open(run):
     add_potion(run, roll_rest_potion())
 
 
+def _shadow_deal(run):
+    grant_random_relic(run)
+    add_curse_to_run(run)
+
+
 EVENTS = [
     {
         "id": "campfire",
@@ -174,6 +179,24 @@ EVENTS = [
             ("Принять дар", lambda run: try_add_card_to_run(run, "root_snare"), "Карта «Корневая Петля»"),
             ("Укрепиться (+6 max HP)", lambda run: run.update({"max_hp": run["max_hp"] + 6, "hp": run["hp"] + 6}), "+6 max HP"),
             ("Уйти (+20 золота)", lambda run: run.update({"gold": run["gold"] + 20}), "+20 золота"),
+        ],
+    },
+    {
+        "id": "healing_spring",
+        "title": "Источник Рубежа",
+        "text": "Чистая вода пульсирует светом. Выпить или укрепить тело?",
+        "choices": [
+            ("Выпить (+15 HP)", lambda run: run.update({"hp": min(run["max_hp"], run["hp"] + 15)}), "+15 HP"),
+            ("Укрепить (+4 max HP)", lambda run: run.update({"max_hp": run["max_hp"] + 4, "hp": run["hp"] + 4}), "+4 max HP"),
+        ],
+    },
+    {
+        "id": "shadow_deal",
+        "title": "Сделка с Тенью",
+        "text": "Тень протягивает артефакт, но требует дань проклятием.",
+        "choices": [
+            ("Принять", _shadow_deal, "Реликвия + проклятие"),
+            ("Отказаться", lambda run: None, "Без последствий"),
         ],
     },
 ]

@@ -126,6 +126,16 @@ RELIC_DEFS = {
         "desc": "Первый навык каждого хода +3 блока.",
         "color": (100, 160, 90),
     },
+    "toxic_mantle": {
+        "name": "Мантия Яда",
+        "desc": "Когда накладываешь яд — +2 блока.",
+        "color": (110, 190, 90),
+    },
+    "debuff_scroll": {
+        "name": "Свиток Проклятий",
+        "desc": "Первый дебафф за ход — возьми 1 карту.",
+        "color": (170, 120, 220),
+    },
 }
 
 BOSS_RELICS = {"crown_shard", "abyss_heart", "storm_ring", "void_crown"}
@@ -320,6 +330,28 @@ def apply_combat_start(combat):
         for enemy in combat.living_enemies():
             add_status(enemy, "vulnerable", 2)
         combat.log("Корона Пустоты: враги уязвимы")
+
+
+def relic_on_poison_applied(relics, combat):
+    if "toxic_mantle" not in relics:
+        return
+    combat.add_player_block(2)
+    combat.spawn_fx("block", 2, "player")
+    combat.log("Мантия Яда: +2 блока")
+
+
+def relic_on_enemy_debuff(relics, combat, status_key):
+    if "debuff_scroll" not in relics or combat.debuff_scroll_used_this_turn:
+        return
+    card = combat.current_card
+    if not card or card.get("type") != "skill":
+        return
+    if status_key not in ("weak", "vulnerable", "poison"):
+        return
+    combat.debuff_scroll_used_this_turn = True
+    combat.draw_cards(1)
+    combat.spawn_fx("draw", 1, "player")
+    combat.log("Свиток Проклятий: +1 карта")
 
 
 def apply_enemy_thorns(combat, enemy, hp_lost):

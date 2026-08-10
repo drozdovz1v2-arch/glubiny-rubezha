@@ -405,18 +405,27 @@ def draw_card(screen, fonts, card, x, y, w, h, playable, hovered, draw_type_icon
     return rect
 
 
-def wrap_text(screen, font, text, x, y, max_w, color, line_h=18):
+def wrap_text_lines(font, text, max_w):
     words = text.split()
-    line, cy = "", y
+    if not words:
+        return [""]
+    lines = []
+    line = ""
     for word in words:
         test = (line + " " + word).strip()
         if font.size(test)[0] > max_w and line:
-            screen.blit(font.render(line, True, color), (x, cy))
-            line, cy = word, cy + line_h
+            lines.append(line)
+            line = word
         else:
             line = test
     if line:
-        screen.blit(font.render(line, True, color), (x, cy))
+        lines.append(line)
+    return lines
+
+
+def wrap_text(screen, font, text, x, y, max_w, color, line_h=18):
+    for i, line in enumerate(wrap_text_lines(font, text, max_w)):
+        screen.blit(font.render(line, True, color), (x, y + i * line_h))
 
 
 def draw_entity_panel(screen, fonts, name, entity, x, y, accent, draw_icon_fn, intent=None, intent_icon_fn=None, intent_label_fn=None, intent_color_fn=None, highlight=False, acting=False, w=ENTITY_W, h=None, chip_hits=None, next_intent=None, block_label=None, block_tooltip=None, vs_block=0):
@@ -591,16 +600,31 @@ def draw_combat_log(screen, fonts, lines, deck_count, discard_count, accent=None
     return log, deck_rect, discard_rect, scroll_rect
 
 
+def measure_text_tooltip(font, desc, tip_w, pad_x, pad_y):
+    line_h = font.get_height() + config.sy(2)
+    desc_w = tip_w - pad_x * 2
+    desc_lines = wrap_text_lines(font, desc, desc_w)
+    title_y = pad_y
+    desc_y = title_y + font.get_height() + config.sy(4)
+    tip_h = desc_y + len(desc_lines) * line_h + pad_y
+    return desc_lines, tip_h, line_h, title_y, desc_y
+
+
 def draw_combat_chip_tooltip(screen, fonts, mouse, hits):
     for rect, title, desc in hits:
         if not rect.collidepoint(mouse) or not desc:
             continue
-        tip_w = 248
-        tip_h = 58 if len(desc) < 40 else 72
-        tip = pygame.Rect(min(mouse[0] + 14, config.SCREEN_WIDTH - tip_w - 12), mouse[1] + 14, tip_w, tip_h)
+        tip_w = config.sx(248)
+        pad_x = config.sx(10)
+        pad_y = config.sy(8)
+        font = fonts["sm"]
+        desc_lines, tip_h, line_h, title_y, desc_y = measure_text_tooltip(font, desc, tip_w, pad_x, pad_y)
+        tip_x = min(mouse[0] + 14, config.SCREEN_WIDTH - tip_w - 12)
+        tip_y = min(mouse[1] + 14, config.SCREEN_HEIGHT - tip_h - 12)
+        tip = pygame.Rect(tip_x, max(config.sy(8), tip_y), tip_w, tip_h)
         draw_panel(screen, tip, fill=(12, 16, 24), border=COLORS["accent"], radius=10, alpha=235, shadow=True)
-        screen.blit(fonts["sm"].render(title, True, COLORS["text"]), (tip.x + 10, tip.y + 8))
-        wrap_text(screen, fonts["sm"], desc, tip.x + 10, tip.y + 26, tip.width - 20, COLORS["text_dim"], line_h=15)
+        screen.blit(font.render(title, True, COLORS["text"]), (tip.x + pad_x, tip.y + title_y))
+        wrap_text(screen, font, desc, tip.x + pad_x, tip.y + desc_y, tip_w - pad_x * 2, COLORS["text_dim"], line_h=line_h)
         return
 
 
@@ -1071,11 +1095,18 @@ def draw_relic_tooltip(screen, fonts, mouse, hits):
         if not rect.collidepoint(mouse):
             continue
         info = RELIC_DEFS.get(rid, {})
-        tip_w = 240
-        tip = pygame.Rect(min(mouse[0] + 14, config.SCREEN_WIDTH - tip_w - 12), mouse[1] + 14, tip_w, 52)
+        tip_w = config.sx(240)
+        pad_x = config.sx(10)
+        pad_y = config.sy(8)
+        font = fonts["sm"]
+        desc = info.get("desc", "")
+        desc_lines, tip_h, line_h, title_y, desc_y = measure_text_tooltip(font, desc, tip_w, pad_x, pad_y)
+        tip_x = min(mouse[0] + 14, config.SCREEN_WIDTH - tip_w - 12)
+        tip_y = min(mouse[1] + 14, config.SCREEN_HEIGHT - tip_h - 12)
+        tip = pygame.Rect(tip_x, max(config.sy(8), tip_y), tip_w, tip_h)
         draw_panel(screen, tip, fill=(12, 16, 24), border=info.get("color", COLORS["accent"]), radius=10, alpha=235, shadow=True)
-        screen.blit(fonts["sm"].render(info.get("name", rid), True, info.get("color", COLORS["text"])), (tip.x + 10, tip.y + 8))
-        screen.blit(fonts["sm"].render(info.get("desc", ""), True, COLORS["text_dim"]), (tip.x + 10, tip.y + 28))
+        screen.blit(font.render(info.get("name", rid), True, info.get("color", COLORS["text"])), (tip.x + pad_x, tip.y + title_y))
+        wrap_text(screen, font, desc, tip.x + pad_x, tip.y + desc_y, tip_w - pad_x * 2, COLORS["text_dim"], line_h=line_h)
         return
 
 
@@ -1272,10 +1303,18 @@ def draw_relic_codex(screen, fonts, meta, mouse, buttons, accent=None):
         if box.collidepoint(mouse) and known:
             hovered_info = info
     if hovered_info:
-        tip = pygame.Rect(min(mouse[0] + 12, config.SCREEN_WIDTH - 260), mouse[1] + 12, 248, 52)
+        tip_w = config.sx(248)
+        pad_x = config.sx(10)
+        pad_y = config.sy(8)
+        font = fonts["sm"]
+        desc = hovered_info["desc"]
+        _, tip_h, line_h, title_y, desc_y = measure_text_tooltip(font, desc, tip_w, pad_x, pad_y)
+        tip_x = min(mouse[0] + 12, config.SCREEN_WIDTH - tip_w - 12)
+        tip_y = min(mouse[1] + 12, config.SCREEN_HEIGHT - tip_h - 12)
+        tip = pygame.Rect(tip_x, max(config.sy(8), tip_y), tip_w, tip_h)
         draw_panel(screen, tip, fill=(12, 16, 24), border=hovered_info["color"], radius=10, alpha=235, shadow=True)
-        screen.blit(fonts["sm"].render(hovered_info["name"], True, hovered_info["color"]), (tip.x + 10, tip.y + 8))
-        screen.blit(fonts["sm"].render(hovered_info["desc"], True, COLORS["text_dim"]), (tip.x + 10, tip.y + 28))
+        screen.blit(font.render(hovered_info["name"], True, hovered_info["color"]), (tip.x + pad_x, tip.y + title_y))
+        wrap_text(screen, font, desc, tip.x + pad_x, tip.y + desc_y, tip_w - pad_x * 2, COLORS["text_dim"], line_h=line_h)
     return content
 
 

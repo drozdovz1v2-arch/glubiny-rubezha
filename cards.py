@@ -5,8 +5,8 @@ from config import pick, shuffle
 from difficulty import shop_price
 
 REWARD_POOL = {
-    "common": ["heavy_blow", "shield_wall", "rally", "quick_slash", "crushing_mark", "desperate_guard", "arc_slash", "fortify", "deflect", "surge_strike", "guard_break"],
-    "uncommon": ["piercing_strike", "frost_edge", "venom_dagger", "battle_cry", "expose", "shatter_strike", "toxic_bloom", "phantom_cut", "void_lance", "warding_pulse", "sand_barrier", "cinder_strike", "root_snare", "vital_surge", "double_tap", "focus", "marking_shot"],
+    "common": ["heavy_blow", "shield_wall", "rally", "quick_slash", "crushing_mark", "desperate_guard", "arc_slash", "fortify", "deflect", "surge_strike", "guard_break", "iron_salve", "plague_knife"],
+    "uncommon": ["piercing_strike", "frost_edge", "venom_dagger", "battle_cry", "expose", "shatter_strike", "toxic_bloom", "phantom_cut", "void_lance", "warding_pulse", "sand_barrier", "cinder_strike", "root_snare", "vital_surge", "double_tap", "focus", "marking_shot", "purify", "reckless_charge", "hemorrhage"],
     "rare": ["iron_will", "whirlwind", "execute", "frontier_pulse", "ruin_strike", "blood_pact", "soul_siphon", "mirror_blow", "shatter_guard", "razor_flurry", "bastion", "adrenaline_rush"],
 }
 
@@ -53,6 +53,11 @@ CARD_DEFS = {
     "focus": {"name": "Концентрация", "type": "skill", "cost": 1, "rarity": "uncommon", "desc": "Возьми 2 карты. Сбрось 1.", "effect": "focus"},
     "marking_shot": {"name": "Меткий Выстрел", "type": "attack", "cost": 1, "rarity": "uncommon", "desc": "Наносит 5 урона. Накладывает 2 Слабости.", "effect": "marking_shot"},
     "adrenaline_rush": {"name": "Адреналин", "type": "skill", "cost": 0, "rarity": "rare", "desc": "Возьми 2 карты. Теряешь 2 HP.", "effect": "adrenaline_rush"},
+    "iron_salve": {"name": "Железная Мазь", "type": "skill", "cost": 1, "rarity": "common", "desc": "Даёт 5 блока. Если на тебе яд — лечит 4 HP.", "effect": "iron_salve"},
+    "plague_knife": {"name": "Чумной Клинок", "type": "attack", "cost": 1, "rarity": "common", "desc": "4 урона. +3 яда, если на цели уже есть яд.", "effect": "plague_knife"},
+    "purify": {"name": "Очищение", "type": "skill", "cost": 1, "rarity": "uncommon", "desc": "Снимает слабость и яд с себя. Возьми 1.", "effect": "purify"},
+    "reckless_charge": {"name": "Безрассудный Натиск", "type": "attack", "cost": 1, "rarity": "uncommon", "desc": "11 урона. Накладывает 1 слабости на себя.", "effect": "reckless_charge"},
+    "hemorrhage": {"name": "Кровотечение", "type": "attack", "cost": 1, "rarity": "uncommon", "desc": "5 урона + столько же, сколько яда на цели.", "effect": "hemorrhage"},
     "curse_wound": {"name": "Рана", "type": "curse", "cost": -1, "rarity": "curse", "unplayable": True, "desc": "Проклятие. Нельзя разыграть.", "effect": "curse_none"},
     "curse_doubt": {"name": "Сомнение", "type": "curse", "cost": 1, "rarity": "curse", "desc": "Сбрось 1 случайную карту.", "effect": "curse_doubt"},
     "curse_hex": {"name": "Сглаз", "type": "curse", "cost": 0, "rarity": "curse", "unplayable": True, "desc": "Проклятие. Занимает руку.", "effect": "curse_none"},
@@ -316,6 +321,37 @@ CARD_SCALING = {
         "stats": {"draw": (2, 1), "self_damage": (2, 0)},
         "desc": lambda s: f"Возьми {s('draw')} карты. Теряешь {s('self_damage')} HP.",
         "play": lambda s, ctx: (ctx.draw_cards(s("draw")), ctx.self_damage(s("self_damage"))),
+    },
+    "iron_salve": {
+        "stats": {"block": (5, 2), "heal": (4, 2)},
+        "desc": lambda s: f"Даёт {s('block')} блока. Если на тебе яд — лечит {s('heal')} HP.",
+        "play": lambda s, ctx: (
+            ctx.gain_block(s("block")),
+            ctx.heal(s("heal")) if ctx.player_has_status("poison") else None,
+        ),
+    },
+    "plague_knife": {
+        "stats": {"damage": (4, 2), "poison": (2, 1), "bonus_poison": (3, 1)},
+        "desc": lambda s: f"{s('damage')} урона. +{s('bonus_poison')} яда, если на цели уже есть яд, иначе +{s('poison')}.",
+        "play": lambda s, ctx: (
+            ctx.deal_damage(s("damage")),
+            ctx.apply_status("poison", s("bonus_poison") if ctx.enemy_has_status("poison") else s("poison")),
+        ),
+    },
+    "purify": {
+        "stats": {"draw": (1, 1)},
+        "desc": lambda s: f"Снимает слабость и яд с себя. Возьми {s('draw')}.",
+        "play": lambda s, ctx: (ctx.cleanse_player("weak", "poison"), ctx.draw_cards(s("draw"))),
+    },
+    "reckless_charge": {
+        "stats": {"damage": (11, 3), "weak": (1, 0)},
+        "desc": lambda s: f"Наносит {s('damage')} урона. Накладывает {s('weak')} слабости на себя.",
+        "play": lambda s, ctx: (ctx.deal_damage(s("damage")), ctx.apply_player_status("weak", s("weak"))),
+    },
+    "hemorrhage": {
+        "stats": {"damage": (5, 2)},
+        "desc": lambda s: f"Наносит {s('damage')} урона + столько же, сколько яда на цели.",
+        "play": lambda s, ctx: ctx.deal_damage(s("damage") + ctx.enemy_status("poison")),
     },
 }
 

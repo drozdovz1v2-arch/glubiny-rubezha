@@ -9,10 +9,10 @@ import config
 from config import COLORS, FPS, GAME_TITLE, NODE_COLORS, NODE_TYPES, clamp, daily_seed, get_display_preset, has_run_save, save_meta
 from difficulty import get_difficulty, node_threat_label, pressure_tier
 from enemies import intent_color, intent_label, get_next_intent
-from game_state import ACHIEVEMENTS, ACT_TRANSITION, CODEX, COMBAT, DEFEAT, EVENT, HELP, MAP, MENU, RELIC_REWARD, REST, REST_REMOVE, REST_UPGRADE, REWARD, SETTINGS, SHOP, VICTORY, Game
+from game_state import ACHIEVEMENTS, ACT_TRANSITION, CODEX, COMBAT, DEFEAT, EVENT, HELP, MAP, MENU, RELIC_REWARD, REST, REST_BREW_COST, REST_REMOVE, REST_UPGRADE, REWARD, SETTINGS, SHOP, VICTORY, Game
 from cards import preview_upgrade, sync_discovered_cards, shop_removal_price
 from relics import RELIC_DEFS, draw_relic_icon
-from icons import draw_card_type_icon, draw_intent_icon, draw_node_icon, draw_potion_icon
+from icons import draw_card_type_icon, draw_intent_icon, draw_node_icon, draw_potion_icon, ENEMY_BLOCK_DESC
 from potions import POTION_DEFS
 from sprites import draw_arena_character, draw_enemy_sprite, draw_event_scene, draw_menu_hero, draw_player_sprite, draw_rest_campfire, draw_shop_banner
 from mapgen import flatten_map, get_act_info, layout_map
@@ -313,7 +313,7 @@ class App:
             if screen == SHOP:
                 self.leave_shop()
                 return
-            if screen in (MAP, REWARD, RELIC_REWARD, REST, EVENT, ACT_TRANSITION):
+            if screen in (MAP, COMBAT, REWARD, RELIC_REWARD, REST, EVENT, ACT_TRANSITION):
                 self.confirm_to_menu = True
                 return
             if screen == MENU:
@@ -402,7 +402,7 @@ class App:
                 self.game.rest_remove()
             elif key == pygame.K_4:
                 from potions import can_add_potion
-                if can_add_potion(self.game.run) and self.game.run["hp"] > 12:
+                if can_add_potion(self.game.run) and self.game.run["gold"] >= REST_BREW_COST:
                     self.audio.play("ui")
                     self.game.rest_brew()
                 else:
@@ -764,10 +764,10 @@ class App:
         hints = {
             MENU: "Enter — продолжить или новый забег  ·  Esc — выход",
             MAP: "Клик по подсвеченному узлу — идти  ·  перетаскивание — прокрутка  ·  Esc — в меню  ·  оранж./голуб. — привал/лавка",
-            COMBAT: "1–9 — карта  ·  Z/X/C — зелья  ·  Tab — сменить цель  ·  ход передаётся автоматически" if not (self.game.combat and not self.game.combat.is_player_turn) else (self.game.combat.action_banner or "Ход врага..."),
+            COMBAT: "1–9 — карта  ·  Z/X/C — зелья  ·  Tab/клик — цель  ·  Esc — в меню" if not (self.game.combat and not self.game.combat.is_player_turn) else (self.game.combat.action_banner or "Ход врага...  ·  Esc — в меню"),
             REWARD: "1–3 — выбрать карту  ·  S — пропустить  ·  Esc — в меню",
             RELIC_REWARD: "1–3 — взять реликвию  ·  S — отказаться  ·  Esc — в меню",
-            REST: "1 — лечение  ·  2 — улучшение  ·  3 — удаление  ·  4 — сварить зелье (−12 HP)  ·  Esc — в меню",
+            REST: f"1 — лечение  ·  2 — улучшение  ·  3 — удаление  ·  4 — сварить зелье (−{REST_BREW_COST} зол.)  ·  Esc — в меню",
             REST_UPGRADE: "Кликни карту для усиления — наведи для превью  ·  Esc — назад",
             REST_REMOVE: "Выбери карту — затем подтверди удаление  ·  Esc — назад",
             SHOP: "1–6 — купить  ·  H — лечение  ·  R — удалить  ·  Q/Esc — уйти",
@@ -802,7 +802,11 @@ class App:
         draw_panel(self.screen, panel, fill=(14, 18, 28), border=COLORS["accent"], radius=16, alpha=240, shadow=True)
         title = self.fonts["md"].render("Выйти в главное меню?", True, COLORS["text"])
         self.screen.blit(title, title.get_rect(center=(panel.centerx, panel.y + config.sy(36))))
-        hint = self.fonts["sm"].render("Забег сохранится — можно продолжить позже", True, COLORS["text_dim"])
+        if self.game.screen == COMBAT:
+            hint_text = "Бой прервётся — продолжишь с карты на том же узле"
+        else:
+            hint_text = "Забег сохранится — можно продолжить позже"
+        hint = self.fonts["sm"].render(hint_text, True, COLORS["text_dim"])
         self.screen.blit(hint, hint.get_rect(center=(panel.centerx, panel.y + config.sy(68))))
         draw_button(
             self.screen, self.fonts,
@@ -819,7 +823,10 @@ class App:
 
     def go_to_menu(self):
         self.audio.play("ui")
-        self.game._persist()
+        if self.game.screen == COMBAT:
+            self.game.leave_combat_for_menu()
+        else:
+            self.game._persist()
         self.game.save()
         self.game.to_menu()
         self.confirm_to_menu = False
@@ -1086,7 +1093,7 @@ class App:
             "Враги показывают намерение — готовь защиту заранее.",
             "Tab — сменить цель. E — конец хода. 1–9 — сыграть карту.",
             "Награда: 1–3 выбор, S — пропуск. Реликвия: 1–3, S — отказ.",
-            "Привал: 1 лечение, 2 улучшение, 3 удаление, 4 сварить зелье (−12 HP).",
+            f"Привал: 1 лечение, 2 улучшение, 3 удаление, 4 сварить зелье (−{REST_BREW_COST} зол.).",
             "Лавка: карты, зелья, артефакт, лечение (H), удаление (R).",
             "Зелья (до 3): Z/X/C в бою, 1 за ход. Лавка, элиты, привал (4).",
             "Клятва в меню — опциональный модификатор обычного забега.",
@@ -1502,21 +1509,25 @@ class App:
                 make_icon(), enemy.get("intent"),
                 draw_intent_icon, intent_label, intent_color, is_target, is_acting,
                 chip_hits=chip_hits, next_intent=get_next_intent(enemy), w=enemy_w, h=entity_h,
-                vs_block=vs_block,
+                vs_block=vs_block, block_tooltip=ENEMY_BLOCK_DESC,
             )
+            sx = ex + enemy_w // 2 - 48 + shake_x
+            sy = stage_y + shake_y
+            enemy_center = (sx + 48, sy + 42)
             if player_turn and not self.game.combat_end_pending:
                 def pick_target(idx=i):
                     if c.target_index != idx:
                         c.target_index = idx
                         self.audio.play("ui")
 
-                self.buttons.add(rect, pick_target, primary=False)
+                sprite_rect = pygame.Rect(sx, sy, 96, 100)
+                hit_zone = rect.union(sprite_rect).inflate(config.sx(10), config.sy(8))
+                if hit_zone.collidepoint(self.mouse):
+                    pygame.draw.rect(self.screen, COLORS["gold"], hit_zone, 2, border_radius=12)
+                self.buttons.add(hit_zone, pick_target, primary=False)
             if is_target and enemy.get("intent"):
                 self.highlight_rects["enemy_intent"] = pygame.Rect(rect.right - 138, rect.y + 8, 128, 22)
 
-            sx = ex + enemy_w // 2 - 48 + shake_x
-            sy = stage_y + shake_y
-            enemy_center = (sx + 48, sy + 42)
             fx_positions[enemy_key] = enemy_center
             draw_arena_character(self.screen, sx, sy, 96, 100, "enemy", enemy.get("id", "slime"), enemy["color"], is_acting)
             if is_target and player_turn:
@@ -1585,7 +1596,7 @@ class App:
             t_num = (c.target_index % living_count) + 1
             status = f"Цель {t_num}/{living_count}"
             draw_button(
-                self.screen, self.fonts, btn_target, "Tab — цель",
+                self.screen, self.fonts, btn_target, "Tab / клик — цель",
                 self.mouse, self.buttons,
                 lambda: (setattr(c, "target_index", c.target_index + 1), self.audio.play("ui")),
                 primary=False,
@@ -1628,7 +1639,7 @@ class App:
 
         heal = max(get_difficulty()["rest_heal"], int(self.game.run["max_hp"] * get_difficulty()["rest_heal_pct"]))
         can_remove = bool(removable_cards(self.game.run["deck"]))
-        can_brew = can_add_potion(self.game.run) and self.game.run["hp"] > 12
+        can_brew = can_add_potion(self.game.run) and self.game.run["gold"] >= REST_BREW_COST
         draw_top_bar(self.screen, self.fonts, "Привал", "Огонь потрескивает в темноте", stats=self.run_stats(self.game.run), accent=accent)
         self.draw_deck_button(self.game.run)
         camp = pygame.Rect(config.SCREEN_WIDTH // 2 - 260, 118, 520, 400)
@@ -1647,11 +1658,17 @@ class App:
             "Удалить карту" if can_remove else "Нельзя удалить",
             self.mouse, self.buttons, remove_cb, primary=False,
         )
+        if can_brew:
+            brew_label = f"Сварить зелье (−{REST_BREW_COST} зол.)"
+        elif not can_add_potion(self.game.run):
+            brew_label = "Зелья: пояс полон"
+        else:
+            brew_label = f"Сварить зелье ({REST_BREW_COST} зол.) — мало монет"
         brew_cb = self.game.rest_brew if can_brew else lambda: None
         draw_button(
             self.screen, self.fonts,
             pygame.Rect(content.x + 24, content.bottom - 118, content.width - 48, 48),
-            "Сварить зелье (−12 HP)" if can_brew else "Зелья: пояс полон или мало HP",
+            brew_label,
             self.mouse, self.buttons, brew_cb, primary=False,
         )
         if not can_remove:

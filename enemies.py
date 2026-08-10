@@ -57,10 +57,14 @@ ENEMY_DEFS = {
                       "patterns": [{"intent": "block", "value": 9}, {"intent": "attack", "value": 11}, {"intent": "debuff", "value": 2, "status": "vulnerable"}, {"intent": "attack", "value": 14}]},
     "void_binder": {"name": "Связующий Пустоты", "max_hp": 42, "biome": "ruins", "color": (145, 85, 175),
                     "patterns": [{"intent": "debuff", "value": 2, "status": "weak"}, {"intent": "steal_block"}, {"intent": "curse", "curse_id": "curse_doubt"}, {"intent": "attack", "value": 10}]},
+    "spore_shaman": {"name": "Споровый Шаман", "max_hp": 40, "biome": "forest", "color": (90, 170, 80),
+                     "patterns": [{"intent": "debuff", "value": 3, "status": "poison"}, {"intent": "attack", "value": 9}, {"intent": "debuff", "value": 2, "status": "weak"}, {"intent": "attack", "value": 12}]},
+    "mirror_shade": {"name": "Зеркальная Тень", "max_hp": 44, "biome": "ruins", "color": (170, 150, 220),
+                     "patterns": [{"intent": "steal_block"}, {"intent": "debuff", "value": 2, "status": "vulnerable"}, {"intent": "attack", "value": 10}, {"intent": "multi", "value": 4, "hits": 2}]},
 }
 
-BIOME_ENEMIES = {"forest": ["slime", "wolf"], "desert": ["scorpion", "slime"], "snow": ["frost_slime", "wolf"], "ruins": ["wraith", "void_shade", "void_lurker", "void_binder"]}
-BIOME_ENEMIES_HARD = {"forest": ["thorn_brute", "wolf", "moss_colossus"], "desert": ["crystal_scorpion", "scorpion", "sand_colossus"], "snow": ["blizzard_hound", "frost_slime", "rift_stalker"], "ruins": ["void_lurker", "curse_weaver", "wraith", "void_binder"]}
+BIOME_ENEMIES = {"forest": ["slime", "wolf", "spore_shaman"], "desert": ["scorpion", "slime"], "snow": ["frost_slime", "wolf"], "ruins": ["wraith", "void_shade", "void_lurker", "void_binder", "mirror_shade"]}
+BIOME_ENEMIES_HARD = {"forest": ["thorn_brute", "wolf", "moss_colossus", "spore_shaman"], "desert": ["crystal_scorpion", "scorpion", "sand_colossus"], "snow": ["blizzard_hound", "frost_slime", "rift_stalker"], "ruins": ["void_lurker", "curse_weaver", "wraith", "void_binder", "mirror_shade"]}
 ELITE_POOLS = {
     "forest": ["forest_alpha", "thorn_brute"],
     "desert": ["dune_stalker", "crystal_scorpion"],

@@ -2,7 +2,7 @@ from cards import play_card_effect
 from config import COLORS, rand_int, shuffle
 from difficulty import get_difficulty
 from mutators import pressure_turn, run_modifiers
-from relics import apply_combat_start, apply_enemy_thorns, check_iron_heart, check_wraith_cloak, relic_bonus_block, relic_bonus_damage, relic_bonus_poison, relic_on_attack_hit, relic_on_block_stolen, relic_on_curse_played
+from relics import apply_combat_start, apply_enemy_thorns, check_iron_heart, check_wraith_cloak, relic_bonus_block, relic_bonus_damage, relic_bonus_poison, relic_on_attack_hit, relic_on_block_stolen, relic_on_curse_played, relic_on_enemy_debuff, relic_on_poison_applied
 from enemies import (
     add_status,
     advance_pattern,
@@ -70,6 +70,34 @@ class CombatContext:
             if key == "poison":
                 amount = relic_bonus_poison(self.combat.relics, amount)
             add_status(enemy, key, amount)
+            if key == "poison":
+                relic_on_poison_applied(self.combat.relics, self.combat)
+            if key in ("weak", "vulnerable", "poison"):
+                relic_on_enemy_debuff(self.combat.relics, self.combat, key)
+
+    def apply_player_status(self, key, amount):
+        add_status(self.combat.player, key, amount)
+
+    def cleanse_player(self, *keys):
+        statuses = self.combat.player.setdefault("statuses", {})
+        cleaned = []
+        for key in keys:
+            if statuses.pop(key, None):
+                cleaned.append(key)
+        if cleaned and self.combat.meta:
+            from achievements import on_cleanse
+            on_cleanse(self.combat.meta)
+        return cleaned
+
+    def player_has_status(self, key):
+        return self.combat.player.get("statuses", {}).get(key, 0) > 0
+
+    def player_status(self, key):
+        return self.combat.player.get("statuses", {}).get(key, 0)
+
+    def enemy_status(self, key):
+        enemy = self.combat.target_enemy()
+        return enemy.get("statuses", {}).get(key, 0) if enemy else 0
 
     def enemy_has_status(self, key):
         enemy = self.combat.target_enemy()
@@ -90,14 +118,11 @@ class CombatContext:
         self.combat.player.setdefault("powers", {})[key] = self.combat.player["powers"].get(key, 0) + amount
 
     def self_damage(self, amount):
-        before_hp = self.combat.player["hp"]
-        apply_block_damage(self.combat.player, amount)
-        hp_lost = before_hp - self.combat.player["hp"]
+        hp_lost = self.combat.lose_player_hp(amount)
         if hp_lost > 0:
             self.combat.spawn_fx("self", hp_lost, "player")
+            self.combat.log(f"−{hp_lost} HP")
             self.combat.shake = max(self.combat.shake, min(10, 4 + hp_lost // 4))
-            check_iron_heart(self.combat, hp_lost)
-            check_wraith_cloak(self.combat, hp_lost)
 
     def enemy_hp_percent(self):
         enemy = self.combat.target_enemy()
@@ -119,7 +144,7 @@ class CombatContext:
 
 
 class CombatState:
-    def __init__(self, run, enemies):
+    def __init__(self, run, enemies, meta=None):
         self.player = {
             "hp": run["hp"],
             "max_hp": run["max_hp"],
@@ -158,6 +183,7 @@ class CombatState:
         self.card_anim = None
         self.sfx_callback = None
         self.relics = list(run.get("relics", []))
+        self.meta = meta
         self.potions = list(run.get("potions", []))
         self.run_mutators = run_modifiers(run)
         self.run_act = run.get("act", 0)
@@ -170,6 +196,7 @@ class CombatState:
         self.iron_heart_used = False
         self.wraith_cloak_used = False
         self.runic_flask_used = False
+        self.debuff_scroll_used_this_turn = False
         self.won = False
         self.lost = False
         self.finished = False
@@ -182,8 +209,15 @@ class CombatState:
         self.player["block"] = 0
         self._enemy_block_pools = {}
         self.player["energy"] = self.player["max_energy"]
-        for e in self.enemies:
-            e["block"] = 0
+        poison_dmg = tick_statuses(self.player)
+        if poison_dmg:
+            self.spawn_fx("poison", poison_dmg, "player")
+            self.log(f"Яд: {poison_dmg} урона")
+            check_iron_heart(self, poison_dmg)
+            check_wraith_cloak(self, poison_dmg)
+            self.check_end()
+            if self.lost:
+                return
         if self.player.get("powers", {}).get("strength"):
             self.player["statuses"]["strength"] = self.player["powers"]["strength"]
         elif "strength" in self.player.get("statuses", {}):
@@ -194,13 +228,11 @@ class CombatState:
             self.spawn_fx("block", bonus, "player")
         pact = self.player.get("powers", {}).get("blood_pact", 0)
         if pact > 0:
-            hp_before = self.player["hp"]
-            apply_block_damage(self.player, 2)
-            self.sync_block_pools()
-            check_iron_heart(self, max(0, hp_before - self.player["hp"]))
-            check_wraith_cloak(self, max(0, hp_before - self.player["hp"]))
+            hp_lost = self.lose_player_hp(2)
+            if hp_lost > 0:
+                self.spawn_fx("self", hp_lost, "player")
             add_status(self.player, "strength", pact)
-            self.log(f"Кровавый Пакт: −2 HP, +{pact} силы")
+            self.log(f"Кровавый Пакт: −{hp_lost} HP, +{pact} силы")
         self.draw_cards(get_difficulty()["cards_per_turn"])
         for e in self.enemies:
             if e["hp"] > 0:
@@ -215,6 +247,7 @@ class CombatState:
         self.bark_used_this_turn = False
         self.mark_used_this_turn = False
         self.potion_used_this_turn = False
+        self.debuff_scroll_used_this_turn = False
         if self.turn >= pressure_turn(self.run_mutators, get_difficulty().get("pressure_turn", 5), self.run_act):
             living = self.living_enemies()
             if living:
@@ -380,6 +413,17 @@ class CombatState:
         self.player["block"] = self.player.get("block", 0) + amount
         self.sync_block_pools()
 
+    def lose_player_hp(self, amount):
+        if amount <= 0:
+            return 0
+        before = self.player["hp"]
+        self.player["hp"] = max(0, before - amount)
+        lost = before - self.player["hp"]
+        if lost > 0:
+            check_iron_heart(self, lost)
+            check_wraith_cloak(self, lost)
+        return lost
+
     def block_for_enemy(self, enemy):
         pool = self._enemy_block_pools.get(id(enemy))
         if pool is not None:
@@ -463,7 +507,6 @@ class CombatState:
             return
 
         if self.enemy_subphase == "act":
-            decay_statuses(enemy)
             poison_dmg = tick_statuses(enemy)
             if poison_dmg:
                 self.spawn_fx("poison", poison_dmg, enemy)
@@ -486,6 +529,8 @@ class CombatState:
         self.action_banner = ""
         self.enemy_subphase = None
         self._enemy_block_pools = {}
+        for enemy in self.living_enemies():
+            decay_statuses(enemy)
         self.check_end()
         if not self.won and not self.lost:
             self.turn += 1

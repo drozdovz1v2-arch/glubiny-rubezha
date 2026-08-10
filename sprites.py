@@ -511,6 +511,8 @@ ENEMY_PAINTERS = {
     "rift_stalker": lambda s, w, h: _paint_wraith(s, w, h, (130, 175, 220)),
     "moss_colossus": lambda s, w, h: _paint_colossus(s, w, h, (72, 140, 88)),
     "void_binder": lambda s, w, h: _paint_wraith(s, w, h, (145, 85, 175)),
+    "spore_shaman": lambda s, w, h: _paint_slime(s, w, h, (90, 170, 80)),
+    "mirror_shade": lambda s, w, h: _paint_wraith(s, w, h, (170, 150, 220)),
     "sand_colossus": lambda s, w, h: _paint_colossus(s, w, h, (212, 168, 74)),
     "sand_tyrant": lambda s, w, h: _paint_colossus(s, w, h, (232, 184, 64), crowned=True),
     "blue_boss": _paint_blue_boss,

@@ -106,6 +106,16 @@ ACHIEVEMENT_DEFS = {
         "desc": "Победи с 3+ проклятиями в колоде.",
         "color": (160, 100, 180),
     },
+    "rest_brew": {
+        "name": "Настойщик",
+        "desc": "Свари зелье на привале.",
+        "color": (120, 200, 160),
+    },
+    "cleanse_self": {
+        "name": "Очищение",
+        "desc": "Сними с себя яд или слабость.",
+        "color": (140, 210, 255),
+    },
 }
 
 
@@ -179,6 +189,14 @@ def on_victory(meta, difficulty_id, run=None):
 
 def on_rest_upgrade(meta):
     unlock_achievement(meta, "rest_upgrade")
+
+
+def on_rest_brew(meta):
+    unlock_achievement(meta, "rest_brew")
+
+
+def on_cleanse(meta):
+    unlock_achievement(meta, "cleanse_self")
 
 
 def on_boss_relic(meta):

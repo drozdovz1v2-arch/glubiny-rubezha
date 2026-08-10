@@ -5,7 +5,7 @@ from difficulty import get_difficulty, gold_reward, init_difficulty
 from enemies import roll_ambush_enemies, roll_battle_enemies, roll_boss
 from mapgen import flatten_map, generate_map, get_act_info, get_node, layout_map, roll_event, visit_node
 from relics import add_relic, apply_combat_end, discover_relic, roll_relic_rewards, shop_inventory, sync_discovered_relics
-from achievements import check_meta_achievements, on_boss_relic, on_daily_win, on_potion_used, on_rest_upgrade, on_shop_remove, on_victory, set_achievement_listener
+from achievements import check_meta_achievements, on_boss_relic, on_cleanse, on_daily_win, on_potion_used, on_rest_brew, on_rest_upgrade, on_shop_remove, on_victory, set_achievement_listener
 from tutorial import Tutorial
 
 MENU = "menu"
@@ -21,6 +21,7 @@ RELIC_REWARD = "relic_reward"
 REST = "rest"
 REST_UPGRADE = "rest_upgrade"
 REST_REMOVE = "rest_remove"
+REST_BREW_COST = 60
 SHOP = "shop"
 EVENT = "event"
 ACT_TRANSITION = "act_transition"
@@ -184,7 +185,7 @@ class Game:
             enemies = roll_battle_enemies(
                 biome, elite, self.run["act"], self.combats_won, mods, map_tier=map_tier,
             )
-        self.combat = CombatState(self.run, enemies)
+        self.combat = CombatState(self.run, enemies, self.meta)
         if ambush:
             self.combat.log("⚠ Засада! Враги ослаблены, но их несколько.")
         elif any(e.get("hunter") for e in enemies):
@@ -195,7 +196,7 @@ class Game:
     def start_boss(self):
         from mutators import run_modifiers
         enemies = roll_boss(self.run["act"], self.combats_won, run_modifiers(self.run))
-        self.combat = CombatState(self.run, enemies)
+        self.combat = CombatState(self.run, enemies, self.meta)
         self.combat.start_turn()
         self.screen = COMBAT
 
@@ -313,12 +314,13 @@ class Game:
 
     def rest_brew(self):
         from potions import add_potion, can_add_potion, discover_potion, roll_rest_potion
-        if not can_add_potion(self.run) or self.run["hp"] <= 12:
+        if not can_add_potion(self.run) or self.run["gold"] < REST_BREW_COST:
             return
-        self.run["hp"] -= 12
+        self.run["gold"] -= REST_BREW_COST
         pid = roll_rest_potion()
         add_potion(self.run, pid)
         discover_potion(self.meta, pid)
+        on_rest_brew(self.meta)
         self.screen = MAP
         self.tutorial.advance("rest_choice")
         self._persist()
@@ -531,6 +533,21 @@ class Game:
         self.screen = MENU
         self.run = None
         self.combat = None
+        self.combat_end_pending = None
+        self.combat_end_timer = 0
+
+    def leave_combat_for_menu(self):
+        if not self.combat or not self.run:
+            return
+        self.combat_end_pending = None
+        self.combat_end_timer = 0
+        self.run["hp"] = self.combat.player["hp"]
+        self.run["gold"] = self.combat.player["gold"]
+        self.run["deck"] = self.combat.sync_deck()
+        self.run["potions"] = list(self.combat.potions)
+        self.combat = None
+        self.screen = MAP
+        self._persist()
 
     def cycle_difficulty(self):
         from difficulty import cycle_difficulty
