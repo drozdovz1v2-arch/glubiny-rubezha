@@ -144,16 +144,17 @@ def shop_relic_price():
     return shop_price(200)
 
 
-def shop_inventory(act=0, owned_relics=None):
+def shop_inventory(act=0, owned_relics=None, owned_card_ids=None):
     from cards import roll_card_rewards
     from difficulty import shop_price
     from potions import roll_shop_potions
 
     owned = set(owned_relics or [])
+    owned_cards = set(owned_card_ids or [])
     prices = {"rare": 150, "uncommon": 100, "common": 60}
     items = [
         {"type": "card", "card": c, "price": shop_price(prices.get(c["rarity"], 60))}
-        for c in roll_card_rewards(3, act)
+        for c in roll_card_rewards(3, act, owned_cards)
     ]
     items.extend(roll_shop_potions(2))
     relic_id = roll_shop_relic(owned)

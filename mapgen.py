@@ -1,6 +1,6 @@
 import random
 
-from cards import create_card, add_curse_to_run
+from cards import create_card, add_curse_to_run, try_add_card_to_run
 from potions import POTION_DEFS, add_potion, can_add_potion
 from config import ACTS, NODE_TYPES, pick, rand_int
 import config
@@ -66,7 +66,7 @@ EVENTS = [
         "text": "Древнее дерево сияет спорами. Выпить сок или взять семя силы?",
         "choices": [
             ("Выпить сок (+12 HP)", lambda run: run.update({"hp": min(run["max_hp"], run["hp"] + 12)}), "+12 HP"),
-            ("Взять семя", lambda run: run["deck"].append(create_card("crushing_mark")), "Карта «Сокрушающая Метка»"),
+            ("Взять семя", lambda run: try_add_card_to_run(run, "crushing_mark"), "Карта «Сокрушающая Метка»"),
         ],
     },
     {
@@ -141,7 +141,7 @@ EVENTS = [
         "title": "Алтарь Пустоты",
         "text": "Камни пульсируют тёмной силой. Принять дар или разрушить алтарь?",
         "choices": [
-            ("Принять дар", lambda run: run["deck"].append(create_card("phantom_cut")), "Карта «Призрачный Разрез»"),
+            ("Принять дар", lambda run: try_add_card_to_run(run, "phantom_cut"), "Карта «Призрачный Разрез»"),
             ("Разрушить (+35 золота)", lambda run: run.update({"gold": run["gold"] + 35}), "+35 золота"),
         ],
     },
@@ -171,7 +171,7 @@ EVENTS = [
         "title": "Шепчущая Чаща",
         "text": "Лес шепчет имена павших стражей. Принять дар, укрепить тело или идти дальше?",
         "choices": [
-            ("Принять дар", lambda run: run["deck"].append(create_card("root_snare")), "Карта «Корневая Петля»"),
+            ("Принять дар", lambda run: try_add_card_to_run(run, "root_snare"), "Карта «Корневая Петля»"),
             ("Укрепиться (+6 max HP)", lambda run: run.update({"max_hp": run["max_hp"] + 6, "hp": run["hp"] + 6}), "+6 max HP"),
             ("Уйти (+20 золота)", lambda run: run.update({"gold": run["gold"] + 20}), "+20 золота"),
         ],

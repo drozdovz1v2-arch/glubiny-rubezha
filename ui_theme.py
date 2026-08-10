@@ -377,23 +377,25 @@ def draw_card(screen, fonts, card, x, y, w, h, playable, hovered, draw_type_icon
 
     name_y = footer.y + config.sy(5)
     name_txt = fonts["card"].render(card["name"], True, COLORS["text"])
-    if name_txt.get_width() > footer.width - config.sx(20):
+    name_max_w = footer.width - config.sx(16)
+    if name_txt.get_width() > name_max_w:
         short = card["name"]
-        while short and fonts["card"].size(short + "…")[0] > footer.width - config.sx(20):
+        while short and fonts["card"].size(short + "…")[0] > name_max_w:
             short = short[:-1]
         name_txt = fonts["card"].render(short + "…", True, COLORS["text"])
     screen.blit(name_txt, (footer.x + config.sx(8), name_y))
-    desc_y = name_y + config.sy(17)
     type_labels = {"attack": "Атака", "skill": "Навык", "power": "Сила"}
     type_label = type_labels.get(card["type"], card["type"])
     type_surf = fonts["sm"].render(type_label, True, lerp_color(base, (255, 255, 255), 0.45))
-    type_x = footer.right - type_surf.get_width() - config.sx(8)
+    type_y = name_y + config.sy(16)
+    desc_y = type_y + config.sy(15)
+    desc_max_w = footer.width - config.sx(16)
     wrap_text(
         screen, fonts["sm"], card["desc"], footer.x + config.sx(8), desc_y,
-        max(config.sx(40), type_x - footer.x - config.sx(16)), COLORS["text_dim"],
-        line_h=config.sy(14),
+        desc_max_w, COLORS["text_dim"],
+        line_h=config.sy(13),
     )
-    screen.blit(type_surf, (type_x, footer.y + config.sy(6)))
+    screen.blit(type_surf, (footer.x + config.sx(8), type_y))
     return rect
 
 
@@ -641,16 +643,32 @@ def draw_card_grid_overlay(screen, fonts, title, cards, mouse, buttons, draw_typ
 
 
 def draw_upgrade_preview(screen, fonts, card, preview, x, y, draw_type_icon):
-    panel = pygame.Rect(x, y, 280, 168)
-    draw_panel(screen, panel, fill=(14, 18, 28), border=COLORS["accent_warm"], radius=12, alpha=240, shadow=True)
+    panel = pygame.Rect(x, y, 280, 148)
+    draw_panel(screen, panel, fill=(14, 18, 28), border=COLORS["accent_warm"], radius=12, alpha=245, shadow=True)
     screen.blit(fonts["sm"].render("После улучшения", True, COLORS["accent_warm"]), (panel.x + 12, panel.y + 10))
-    draw_type_icon(screen, panel.x + 12, panel.y + 32, 22, preview["type"])
-    screen.blit(fonts["md"].render(card["name"], True, COLORS["text_dim"]), (panel.x + 40, panel.y + 32))
-    arrow = fonts["md"].render("→", True, COLORS["gold"])
-    screen.blit(arrow, (panel.x + 40, panel.y + 52))
-    screen.blit(fonts["md"].render(preview["name"], True, COLORS["gold"]), (panel.x + 58, panel.y + 52))
-    wrap_text(screen, fonts["sm"], preview["desc"], panel.x + 12, panel.y + 78, panel.width - 24, COLORS["text"], line_h=16)
+    screen.blit(fonts["md"].render(preview["name"], True, COLORS["gold"]), (panel.x + 12, panel.y + 34))
+    draw_type_icon(screen, panel.x + 12, panel.y + 58, 20, preview["type"])
+    cost = fonts["sm"].render(f"Стоимость: {preview['cost']}", True, COLORS["text_dim"])
+    screen.blit(cost, (panel.x + 38, panel.y + 60))
+    wrap_text(screen, fonts["sm"], preview["desc"], panel.x + 12, panel.y + 84, panel.width - 24, COLORS["text"], line_h=16)
     return panel
+
+
+def position_upgrade_preview(card_rect, preview_w=280, preview_h=148):
+    margin = config.sx(16)
+    px = card_rect.right + margin
+    py = card_rect.centery - preview_h // 2
+    if px + preview_w > config.SCREEN_WIDTH - margin:
+        px = card_rect.left - preview_w - margin
+    if py + preview_h > config.SCREEN_HEIGHT - config.sy(58):
+        py = config.SCREEN_HEIGHT - config.sy(58) - preview_h
+    if py < config.sy(100):
+        py = config.sy(100)
+    if px < margin:
+        px = margin
+    if px + preview_w > config.SCREEN_WIDTH - margin:
+        px = config.SCREEN_WIDTH - margin - preview_w
+    return int(px), int(py)
 
 
 def layout_hand_cards(hand_size):
@@ -766,12 +784,51 @@ def draw_potion_bar(screen, fonts, potions, mouse, buttons, on_use, accent, used
 
 
 def layout_reward_cards(count):
-    panel = pygame.Rect(40, 118, config.SCREEN_WIDTH - 80, 392)
-    cw, ch, gap = REWARD_CARD_W, REWARD_CARD_H, 24
-    total = count * cw + max(0, count - 1) * gap
-    sx = panel.x + max(20, (panel.width - total) // 2)
-    sy = panel.y + 52
+    panel, sx, sy, cw, ch, gap, _cols = layout_card_grid(count, top=118, bottom_pad=58)
     return panel, sx, sy, cw, ch, gap
+
+
+def layout_card_grid(count, top=118, bottom_pad=58, margin_x=40):
+    """Card grid scaled to fill the screen between top bar and footer."""
+    action_h = config.sy(52)
+    panel_h = config.SCREEN_HEIGHT - top - bottom_pad - action_h
+    panel = pygame.Rect(margin_x, top, config.SCREEN_WIDTH - margin_x * 2, max(config.sy(220), panel_h))
+    inner_top = config.sy(44)
+    avail_h = max(config.sy(120), panel.height - inner_top - config.sy(12))
+    avail_w = max(config.sx(120), panel.width - config.sx(24))
+    gap = config.sx(14)
+    min_cw, min_ch = config.sx(96), config.sy(112)
+    max_cw, max_ch = REWARD_CARD_W, REWARD_CARD_H
+
+    if count <= 0:
+        return panel, panel.x + config.sx(12), panel.y + inner_top, max_cw, max_ch, gap, 1
+
+    best = None
+    max_cols = min(count, 7)
+    for cols in range(1, max_cols + 1):
+        rows = (count + cols - 1) // cols
+        cw = min(max_cw, (avail_w - (cols - 1) * gap) // cols)
+        ch = min(max_ch, (avail_h - (rows - 1) * gap) // max(1, rows))
+        cw = max(min_cw, cw)
+        ch = max(min_ch, ch)
+        total_w = cols * cw + (cols - 1) * gap
+        total_h = rows * ch + (rows - 1) * gap
+        if total_w <= avail_w and total_h <= avail_h:
+            best = (cols, cw, ch, total_w, total_h)
+
+    if best:
+        cols, cw, ch, total_w, total_h = best
+    else:
+        cols = min(count, 5)
+        cw = max(min_cw, min(max_cw, (avail_w - (cols - 1) * gap) // cols))
+        rows = (count + cols - 1) // cols
+        ch = max(min_ch, min(max_ch, (avail_h - (rows - 1) * gap) // max(1, rows)))
+        total_w = cols * cw + (cols - 1) * gap
+        total_h = rows * ch + (rows - 1) * gap
+
+    sx = panel.x + max(config.sx(12), (panel.width - total_w) // 2)
+    sy = panel.y + inner_top + max(0, (avail_h - total_h) // 2)
+    return panel, sx, sy, cw, ch, gap, cols
 
 
 def layout_shop_cards(count):

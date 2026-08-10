@@ -1,4 +1,4 @@
-from cards import removable_cards, roll_card_rewards, shop_removal_price, starter_deck, sync_discovered_cards, upgrade_card, upgradable_cards
+from cards import can_add_card_to_deck, deck_card_ids, removable_cards, roll_card_rewards, shop_removal_price, starter_deck, sync_discovered_cards, unique_upgradable_cards, upgrade_card
 from combat import CombatState
 from config import ACTS, clear_run_save, daily_seed, load_meta, save_meta, save_run_state
 from difficulty import get_difficulty, gold_reward, init_difficulty
@@ -155,7 +155,11 @@ class Game:
             if t == "rest":
                 self.screen = REST
             elif t == "shop":
-                self.shop_items = shop_inventory(self.run["act"], self.run.get("relics", []))
+                self.shop_items = shop_inventory(
+                    self.run["act"],
+                    self.run.get("relics", []),
+                    deck_card_ids(self.run.get("deck", [])),
+                )
                 self.run["shop_removal_used"] = False
                 self.run["shop_heal_used"] = False
                 self.screen = SHOP
@@ -244,7 +248,7 @@ class Game:
                         self.last_potion_gain = POTION_DEFS[pid]["name"]
                 self._open_relic_reward("card_reward")
             else:
-                self.reward_cards = roll_card_rewards(3, self.run["act"])
+                self.reward_cards = roll_card_rewards(3, self.run["act"], deck_card_ids(self.run["deck"]))
                 self.screen = REWARD
         else:
             self._record_run_stats(False)
@@ -267,7 +271,7 @@ class Game:
         self.relic_choices = []
         self.post_relic_action = None
         if action == "card_reward":
-            self.reward_cards = roll_card_rewards(3, self.run["act"])
+            self.reward_cards = roll_card_rewards(3, self.run["act"], deck_card_ids(self.run["deck"]))
             self.screen = REWARD
         elif action == "boss_advance":
             self.run["act"] += 1
@@ -283,8 +287,9 @@ class Game:
     def pick_reward(self, index):
         if index >= 0 and index < len(self.reward_cards):
             card = self.reward_cards[index]
-            self.run["deck"].append(card)
-            sync_discovered_cards(self.meta, [card])
+            if can_add_card_to_deck(self.run["deck"], card["id"]):
+                self.run["deck"].append(card)
+                sync_discovered_cards(self.meta, [card])
         self.tutorial.advance("pick_or_skip")
         self.last_gold_gain = 0
         self.screen = MAP
@@ -311,18 +316,12 @@ class Game:
         self._persist()
 
     def rest_upgrade(self):
-        choices = upgradable_cards(self.run["deck"])
+        choices = unique_upgradable_cards(self.run["deck"])
         if not choices:
             self.screen = MAP
             self._persist()
             return
-        seen = set()
-        unique = []
-        for card in choices:
-            if card["uid"] not in seen:
-                seen.add(card["uid"])
-                unique.append(card)
-        self.upgrade_choices = unique
+        self.upgrade_choices = choices
         self.screen = REST_UPGRADE
         self.tutorial.advance("rest_choice")
 
@@ -436,8 +435,10 @@ class Game:
             add_potion(self.run, item["potion_id"])
             discover_potion(self.meta, item["potion_id"])
         else:
-            self.run["deck"].append(item["card"])
-            sync_discovered_cards(self.meta, [item["card"]])
+            card = item["card"]
+            if can_add_card_to_deck(self.run["deck"], card["id"]):
+                self.run["deck"].append(card)
+                sync_discovered_cards(self.meta, [card])
         self.shop_items.pop(index)
         self.tutorial.advance("shop_action")
         self._persist()
@@ -481,7 +482,7 @@ class Game:
             return
         if self.run.get("pending_event_reward") == "rare":
             from cards import roll_rare_card_reward
-            self.reward_cards = roll_rare_card_reward()
+            self.reward_cards = roll_rare_card_reward(deck_card_ids(self.run.get("deck", [])))
             self.run["pending_event_reward"] = None
             self.screen = REWARD
         else:

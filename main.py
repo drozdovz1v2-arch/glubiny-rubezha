@@ -52,6 +52,8 @@ from ui_theme import (
     draw_section_panel,
     draw_top_bar,
     draw_upgrade_preview,
+    layout_card_grid,
+    position_upgrade_preview,
     draw_actions_bar,
     layout_action_buttons,
     layout_hand_cards,
@@ -1652,19 +1654,17 @@ class App:
         )
 
     def draw_rest_upgrade(self, accent):
+        from collections import Counter
+
         draw_top_bar(self.screen, self.fonts, "Кузница", "Выбери одну карту для усиления", stats=self.run_stats(self.game.run), accent=COLORS["accent_warm"])
         self.draw_deck_button(self.game.run)
         cards = self.game.upgrade_choices
-        panel = pygame.Rect(40, 118, config.SCREEN_WIDTH - 80, 392)
+        id_counts = Counter(c["id"] for c in self.game.run.get("deck", []))
+        panel, sx, sy, cw, ch, gap, cols = layout_card_grid(len(cards), top=118, bottom_pad=58)
         draw_section_panel(self.screen, panel, "Улучшение", self.fonts, accent=COLORS["accent_warm"], alpha=180)
-        cw, ch, gap = 128, 132, 14
-        cols = min(6, max(1, len(cards)))
-        rows = (len(cards) + cols - 1) // cols
-        total_w = cols * cw + (cols - 1) * gap
-        sx = panel.x + max(20, (panel.width - total_w) // 2)
-        sy = panel.y + 48
         preview_card = None
         preview_data = None
+        hover_rect = None
         for i, card in enumerate(cards):
             col = i % cols
             row = i // cols
@@ -1675,14 +1675,26 @@ class App:
                 preview_data = preview_upgrade(card)
                 if preview_data:
                     preview_card = card
+                    hover_rect = card_rect
             self.draw_card_ui(card, x, y, cw, ch, True, lambda idx=i: self.pick_rest_upgrade(idx))
+            count = id_counts.get(card["id"], 1)
+            if count > 1:
+                badge = self.fonts["sm"].render(f"×{count}", True, COLORS["gold"])
+                badge_bg = pygame.Rect(x + cw - badge.get_width() - 10, y + 6, badge.get_width() + 8, badge.get_height() + 4)
+                pygame.draw.rect(self.screen, (20, 16, 8), badge_bg, border_radius=6)
+                pygame.draw.rect(self.screen, COLORS["gold"], badge_bg, 1, border_radius=6)
+                self.screen.blit(badge, (badge_bg.x + 4, badge_bg.y + 2))
 
-        if preview_card and preview_data:
-            px = min(self.mouse[0] + 20, config.SCREEN_WIDTH - 300)
-            py = min(self.mouse[1] - 20, config.SCREEN_HEIGHT - 190)
+        if preview_card and preview_data and hover_rect:
+            px, py = position_upgrade_preview(hover_rect)
             draw_upgrade_preview(self.screen, self.fonts, preview_card, preview_data, px, py, draw_card_type_icon)
 
-        draw_button(self.screen, self.fonts, pygame.Rect(config.SCREEN_WIDTH // 2 - 100, 530, 200, 40), "Отмена", self.mouse, self.buttons, self.game.cancel_rest_remove, primary=False)
+        cancel_y = panel.bottom + config.sy(10)
+        draw_button(
+            self.screen, self.fonts,
+            pygame.Rect(config.SCREEN_WIDTH // 2 - 100, cancel_y, 200, 40),
+            "Отмена", self.mouse, self.buttons, self.game.cancel_rest_remove, primary=False,
+        )
 
     def pick_rest_upgrade(self, index):
         self.audio.play("ui")

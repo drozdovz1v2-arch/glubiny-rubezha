@@ -5,9 +5,9 @@ from config import pick, shuffle
 from difficulty import shop_price
 
 REWARD_POOL = {
-    "common": ["heavy_blow", "shield_wall", "rally", "quick_slash", "crushing_mark", "desperate_guard"],
-    "uncommon": ["piercing_strike", "frost_edge", "venom_dagger", "battle_cry", "expose", "shatter_strike", "toxic_bloom", "phantom_cut", "void_lance", "warding_pulse", "sand_barrier", "cinder_strike", "root_snare"],
-    "rare": ["iron_will", "whirlwind", "execute", "frontier_pulse", "ruin_strike", "blood_pact", "soul_siphon", "mirror_blow", "shatter_guard"],
+    "common": ["heavy_blow", "shield_wall", "rally", "quick_slash", "crushing_mark", "desperate_guard", "arc_slash", "fortify", "deflect"],
+    "uncommon": ["piercing_strike", "frost_edge", "venom_dagger", "battle_cry", "expose", "shatter_strike", "toxic_bloom", "phantom_cut", "void_lance", "warding_pulse", "sand_barrier", "cinder_strike", "root_snare", "vital_surge", "double_tap"],
+    "rare": ["iron_will", "whirlwind", "execute", "frontier_pulse", "ruin_strike", "blood_pact", "soul_siphon", "mirror_blow", "shatter_guard", "razor_flurry", "bastion"],
 }
 
 CARD_DEFS = {
@@ -41,6 +41,13 @@ CARD_DEFS = {
     "mirror_blow": {"name": "Зеркальный Удар", "type": "attack", "cost": 1, "rarity": "rare", "desc": "6 урона + до 10 от твоего блока.", "effect": "mirror_blow"},
     "root_snare": {"name": "Корневая Петля", "type": "skill", "cost": 1, "rarity": "uncommon", "desc": "5 блока, 2 Уязвимости, возьми 1.", "effect": "root_snare"},
     "shatter_guard": {"name": "Удар по Стражу", "type": "attack", "cost": 2, "rarity": "rare", "desc": "10 урона. +8 если у цели есть блок.", "effect": "shatter_guard"},
+    "arc_slash": {"name": "Дуговой Удар", "type": "attack", "cost": 1, "rarity": "common", "desc": "Наносит 6 урона.", "effect": "arc_slash"},
+    "fortify": {"name": "Укрепление", "type": "skill", "cost": 1, "rarity": "common", "desc": "Даёт 6 блока.", "effect": "fortify"},
+    "deflect": {"name": "Отвод", "type": "skill", "cost": 1, "rarity": "common", "desc": "Даёт 3 блока. Возьми 1 карту.", "effect": "deflect"},
+    "vital_surge": {"name": "Прилив Сил", "type": "attack", "cost": 1, "rarity": "uncommon", "desc": "Наносит 5 урона. Восстанавливает 2 HP.", "effect": "vital_surge"},
+    "double_tap": {"name": "Двойной Удар", "type": "attack", "cost": 1, "rarity": "uncommon", "desc": "Наносит 3 урона дважды.", "effect": "double_tap"},
+    "razor_flurry": {"name": "Бритвенный Шторм", "type": "attack", "cost": 2, "rarity": "rare", "desc": "Наносит 4 урона 3 раза.", "effect": "razor_flurry"},
+    "bastion": {"name": "Бастион", "type": "power", "cost": 2, "rarity": "rare", "desc": "В начале хода получай 3 блока.", "effect": "bastion"},
     "curse_wound": {"name": "Рана", "type": "curse", "cost": -1, "rarity": "curse", "unplayable": True, "desc": "Проклятие. Нельзя разыграть.", "effect": "curse_none"},
     "curse_doubt": {"name": "Сомнение", "type": "curse", "cost": 1, "rarity": "curse", "desc": "Сбрось 1 случайную карту.", "effect": "curse_doubt"},
     "curse_hex": {"name": "Сглаз", "type": "curse", "cost": 0, "rarity": "curse", "unplayable": True, "desc": "Проклятие. Занимает руку.", "effect": "curse_none"},
@@ -79,6 +86,13 @@ CARD_UPGRADES = {
     "mirror_blow": {"effect": "mirror_blow_up", "desc": "8 урона + до 14 от твоего блока."},
     "root_snare": {"effect": "root_snare_up", "desc": "7 блока, 3 Уязвимости, возьми 1."},
     "shatter_guard": {"effect": "shatter_guard_up", "desc": "12 урона. +10 если у цели есть блок."},
+    "arc_slash": {"effect": "arc_slash_up", "desc": "Наносит 8 урона."},
+    "fortify": {"effect": "fortify_up", "desc": "Даёт 9 блока."},
+    "deflect": {"effect": "deflect_up", "desc": "Даёт 5 блока. Возьми 1 карту."},
+    "vital_surge": {"effect": "vital_surge_up", "desc": "Наносит 7 урона. Восстанавливает 4 HP."},
+    "double_tap": {"effect": "double_tap_up", "desc": "Наносит 4 урона дважды."},
+    "razor_flurry": {"effect": "razor_flurry_up", "desc": "Наносит 5 урона 3 раза."},
+    "bastion": {"effect": "bastion_up", "desc": "В начале хода получай 5 блока."},
 }
 
 
@@ -126,6 +140,36 @@ def upgradable_cards(deck):
     return [c for c in deck if not c.get("upgraded") and c["id"] in CARD_UPGRADES and c.get("type") != "curse"]
 
 
+def unique_upgradable_cards(deck):
+    """One representative card per upgradable type (for the forge screen)."""
+    seen_ids = set()
+    unique = []
+    for card in upgradable_cards(deck):
+        if card["id"] in seen_ids:
+            continue
+        seen_ids.add(card["id"])
+        unique.append(card)
+    return unique
+
+
+def deck_card_ids(deck):
+    return {c["id"] for c in deck if c.get("type") != "curse"}
+
+
+def can_add_card_to_deck(deck, card_id):
+    if card_id in CURSE_IDS:
+        return True
+    return card_id not in deck_card_ids(deck)
+
+
+def try_add_card_to_run(run, card_id):
+    deck = run.setdefault("deck", [])
+    if not can_add_card_to_deck(deck, card_id):
+        return False
+    deck.append(create_card(card_id))
+    return True
+
+
 def create_card(card_id):
     base = CARD_DEFS.get(card_id, CARD_DEFS["strike"])
     return {"id": card_id, "uid": f"{card_id}_{uuid.uuid4().hex[:8]}", **base}
@@ -138,7 +182,8 @@ def starter_deck():
     return shuffle(deck)
 
 
-def roll_card_rewards(count=3, act=0):
+def roll_card_rewards(count=3, act=0, exclude_ids=None):
+    exclude_ids = set(exclude_ids or [])
     weights = (
         (0.7, 0.25, 0.05) if act == 0 else
         (0.5, 0.35, 0.15) if act == 1 else
@@ -147,24 +192,37 @@ def roll_card_rewards(count=3, act=0):
     )
     picks = []
     used = set()
-    while len(picks) < count:
+    attempts = 0
+    while len(picks) < count and attempts < count * 40:
+        attempts += 1
         roll = random.random()
         rarity = "common"
         if roll > weights[0] + weights[1]:
             rarity = "rare"
         elif roll > weights[0]:
             rarity = "uncommon"
-        pool = [cid for cid in REWARD_POOL[rarity] if cid not in used]
+        pool = [cid for cid in REWARD_POOL[rarity] if cid not in used and cid not in exclude_ids]
+        if not pool:
+            pool = [cid for cid in REWARD_POOL[rarity] if cid not in used]
+        if not pool:
+            for alt in ("uncommon", "common", "rare"):
+                pool = [cid for cid in REWARD_POOL[alt] if cid not in used and cid not in exclude_ids]
+                if pool:
+                    break
         if not pool:
             continue
         cid = pick(pool)
         used.add(cid)
+        exclude_ids.add(cid)
         picks.append(create_card(cid))
     return picks
 
 
-def roll_rare_card_reward():
-    pool = REWARD_POOL["rare"]
+def roll_rare_card_reward(exclude_ids=None):
+    exclude_ids = set(exclude_ids or [])
+    pool = [cid for cid in REWARD_POOL["rare"] if cid not in exclude_ids]
+    if not pool:
+        pool = list(REWARD_POOL["rare"])
     return [create_card(pick(pool))]
 
 
@@ -238,6 +296,13 @@ def play_card_effect(effect_id, ctx):
         "mirror_blow": lambda: ctx.deal_damage(6 + min(ctx.player_block(), 10)),
         "root_snare": lambda: (ctx.gain_block(5), ctx.apply_status("vulnerable", 2), ctx.draw_cards(1)),
         "shatter_guard": lambda: ctx.deal_shatter_guard(10, 8),
+        "arc_slash": lambda: ctx.deal_damage(6),
+        "fortify": lambda: ctx.gain_block(6),
+        "deflect": lambda: (ctx.gain_block(3), ctx.draw_cards(1)),
+        "vital_surge": lambda: (ctx.deal_damage(5), ctx.heal(2)),
+        "double_tap": lambda: (ctx.deal_damage(3), ctx.deal_damage(3)),
+        "razor_flurry": lambda: [ctx.deal_damage(4) for _ in range(3)],
+        "bastion": lambda: ctx.gain_power("metallicize", 3),
         "curse_doubt": lambda: ctx.discard_random(1),
         "curse_none": lambda: None,
         "strike_up": lambda: ctx.deal_damage(7),
@@ -270,6 +335,13 @@ def play_card_effect(effect_id, ctx):
         "root_snare_up": lambda: (ctx.gain_block(7), ctx.apply_status("vulnerable", 3), ctx.draw_cards(1)),
         "shatter_guard_up": lambda: ctx.deal_shatter_guard(12, 10),
         "blood_pact_up": lambda: ctx.gain_power("blood_pact", 2),
+        "arc_slash_up": lambda: ctx.deal_damage(8),
+        "fortify_up": lambda: ctx.gain_block(9),
+        "deflect_up": lambda: (ctx.gain_block(5), ctx.draw_cards(1)),
+        "vital_surge_up": lambda: (ctx.deal_damage(7), ctx.heal(4)),
+        "double_tap_up": lambda: (ctx.deal_damage(4), ctx.deal_damage(4)),
+        "razor_flurry_up": lambda: [ctx.deal_damage(5) for _ in range(3)],
+        "bastion_up": lambda: ctx.gain_power("metallicize", 5),
     }
     fn = effects.get(effect_id, effects["strike"])
     fn()
