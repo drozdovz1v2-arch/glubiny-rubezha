@@ -129,7 +129,7 @@ def use_potion_in_combat(combat, index):
         combat.player["hp"] += heal
         combat.spawn_fx("heal", heal, "player")
     elif pid == "iron_brew":
-        combat.player["block"] += 12
+        combat.add_player_block(12)
         combat.spawn_fx("block", 12, "player")
     elif pid == "focus_tonic":
         combat.player["energy"] += 1
@@ -148,7 +148,7 @@ def use_potion_in_combat(combat, index):
             check_boss_enrage(combat, enemy)
         combat.shake = max(combat.shake, 4)
     elif pid == "smoke_vial":
-        combat.player["block"] += 8
+        combat.add_player_block(8)
         combat.spawn_fx("block", 8, "player")
         combat.draw_cards(1)
         combat.spawn_fx("draw", 1, "player")
@@ -162,7 +162,7 @@ def use_potion_in_combat(combat, index):
     elif pid == "frost_aegis":
         from enemies import add_status
 
-        combat.player["block"] += 10
+        combat.add_player_block(10)
         combat.spawn_fx("block", 10, "player")
         for enemy in combat.living_enemies():
             add_status(enemy, "weak", 1)

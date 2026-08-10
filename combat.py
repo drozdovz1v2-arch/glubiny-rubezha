@@ -16,6 +16,7 @@ from enemies import (
 
 ENEMY_ACTION_DELAY = 55
 ENEMY_WINDUP_DELAY = 28
+BLOCK_TOOLTIP = "Поглощает урон до конца хода, затем сгорает."
 
 
 class CombatContext:
@@ -48,7 +49,7 @@ class CombatContext:
 
     def gain_block(self, amount):
         amount = relic_bonus_block(self.combat.relics, self.combat.current_card, amount, self.combat)
-        self.combat.player["block"] += amount
+        self.combat.add_player_block(amount)
         self.combat.spawn_fx("block", amount, "player")
 
     def draw_cards(self, n):
@@ -144,6 +145,7 @@ class CombatState:
         self.enemy_subphase = None
         self.enemy_queue = []
         self.enemy_queue_idx = 0
+        self._enemy_block_pools = {}
         self.active_enemy_idx = None
         self.step_timer = 0
         self.action_banner = ""
@@ -178,6 +180,7 @@ class CombatState:
 
     def start_turn(self):
         self.player["block"] = 0
+        self._enemy_block_pools = {}
         self.player["energy"] = self.player["max_energy"]
         for e in self.enemies:
             e["block"] = 0
@@ -187,12 +190,13 @@ class CombatState:
             self.player["statuses"].pop("strength", None)
         if self.player.get("powers", {}).get("metallicize"):
             bonus = self.player["powers"]["metallicize"]
-            self.player["block"] += bonus
+            self.add_player_block(bonus)
             self.spawn_fx("block", bonus, "player")
         pact = self.player.get("powers", {}).get("blood_pact", 0)
         if pact > 0:
             hp_before = self.player["hp"]
             apply_block_damage(self.player, 2)
+            self.sync_block_pools()
             check_iron_heart(self, max(0, hp_before - self.player["hp"]))
             check_wraith_cloak(self, max(0, hp_before - self.player["hp"]))
             add_status(self.player, "strength", pact)
@@ -349,6 +353,72 @@ class CombatState:
         elif self.pulse_key:
             self.pulse_key = None
 
+    def _block_pool_enemies(self):
+        if self.phase == "enemy_turn" and self.enemy_queue:
+            return [self.enemies[i] for i in self.enemy_queue]
+        return self.living_enemies()
+
+    def sync_block_pools(self, enemies=None):
+        enemies = enemies if enemies is not None else self._block_pool_enemies()
+        total = max(0, self.player.get("block", 0))
+        n = len(enemies)
+        if n <= 0:
+            self._enemy_block_pools = {}
+            return
+        if n == 1:
+            self._enemy_block_pools = {id(enemies[0]): total}
+            return
+        base = total // n
+        extra = total % n
+        self._enemy_block_pools = {}
+        for i, enemy in enumerate(enemies):
+            self._enemy_block_pools[id(enemy)] = base + (1 if i < extra else 0)
+
+    def add_player_block(self, amount):
+        if amount <= 0:
+            return
+        self.player["block"] = self.player.get("block", 0) + amount
+        self.sync_block_pools()
+
+    def block_for_enemy(self, enemy):
+        pool = self._enemy_block_pools.get(id(enemy))
+        if pool is not None:
+            return pool
+        eid = enemy.get("id")
+        for e in self.enemies:
+            if e.get("id") == eid:
+                return self._enemy_block_pools.get(id(e), 0)
+        return 0
+
+    def player_block_chip(self):
+        total = self.player.get("block", 0)
+        living = self.living_enemies()
+        if total <= 0:
+            return f"Блок 0", BLOCK_TOOLTIP
+        if len(living) <= 1:
+            return f"Блок {total}", BLOCK_TOOLTIP
+        pools = [self.block_for_enemy(e) for e in living]
+        if pools and min(pools) == max(pools):
+            return f"Блок {total}", f"{pools[0]} блока на каждого врага ({len(living)}×). Поглощает урон от его атак."
+        parts = ", ".join(f"{e['name']}: {self.block_for_enemy(e)}" for e in living)
+        return f"Блок {total}", f"Распределён по врагам: {parts}."
+
+    def _split_player_block_for_enemies(self):
+        self.sync_block_pools()
+
+    def _apply_player_damage_from_enemy(self, amount, enemy, pierce=False):
+        remaining = amount
+        absorbed = 0
+        if not pierce:
+            pool = self._enemy_block_pools.get(id(enemy), 0)
+            if pool > 0:
+                absorbed = min(pool, remaining)
+                self._enemy_block_pools[id(enemy)] = pool - absorbed
+                self.player["block"] = max(0, self.player.get("block", 0) - absorbed)
+                remaining -= absorbed
+        self.player["hp"] -= remaining
+        return remaining, absorbed
+
     def end_turn(self):
         if not self.is_player_turn:
             return
@@ -358,6 +428,7 @@ class CombatState:
         self.enemy_subphase = "windup"
         self.enemy_queue = [i for i, e in enumerate(self.enemies) if e["hp"] > 0]
         self.enemy_queue_idx = 0
+        self._split_player_block_for_enemies()
         self.active_enemy_idx = None
         self.step_timer = ENEMY_WINDUP_DELAY
         self.action_banner = "Ход врагов..."
@@ -414,6 +485,7 @@ class CombatState:
         self.active_enemy_idx = None
         self.action_banner = ""
         self.enemy_subphase = None
+        self._enemy_block_pools = {}
         self.check_end()
         if not self.won and not self.lost:
             self.turn += 1
@@ -423,19 +495,27 @@ class CombatState:
         kind = intent.get("intent")
         if kind == "attack":
             dmg = scaled_damage(intent["value"], enemy, self.player)
-            hp_lost = apply_block_damage(self.player, dmg)
+            hp_lost, blocked = self._apply_player_damage_from_enemy(dmg, enemy)
             if hp_lost > 0:
                 self.spawn_fx("damage", hp_lost, "player")
+            elif blocked > 0:
+                self.spawn_fx("blocked", blocked, "player")
             check_iron_heart(self, hp_lost)
             check_wraith_cloak(self, hp_lost)
             apply_enemy_thorns(self, enemy, hp_lost)
             self.log(f"{enemy['name']} атакует: {hp_lost or 'блок'}")
         elif kind == "multi":
             total = 0
+            blocked_total = 0
             for _ in range(intent["hits"]):
-                total += apply_block_damage(self.player, scaled_damage(intent["value"], enemy, self.player))
+                hit = scaled_damage(intent["value"], enemy, self.player)
+                hp_lost, blocked = self._apply_player_damage_from_enemy(hit, enemy)
+                total += hp_lost
+                blocked_total += blocked
             if total > 0:
                 self.spawn_fx("damage", total, "player")
+            elif blocked_total > 0:
+                self.spawn_fx("blocked", blocked_total, "player")
             check_iron_heart(self, total)
             check_wraith_cloak(self, total)
             apply_enemy_thorns(self, enemy, total)
@@ -453,12 +533,15 @@ class CombatState:
         elif kind == "steal_block":
             stolen = self.player["block"]
             self.player["block"] = 0
+            self._enemy_block_pools = {key: 0 for key in self._enemy_block_pools}
             enemy["block"] += stolen
             relic_on_block_stolen(self.relics, self, stolen)
             dmg = intent.get("bonus_dmg", 7)
-            hp_lost = apply_block_damage(self.player, dmg)
+            hp_lost, blocked = self._apply_player_damage_from_enemy(dmg, enemy)
             if hp_lost > 0:
                 self.spawn_fx("damage", hp_lost, "player")
+            elif blocked > 0:
+                self.spawn_fx("blocked", blocked, "player")
             check_iron_heart(self, hp_lost)
             check_wraith_cloak(self, hp_lost)
             self.log(f"{enemy['name']} крадёт блок и бьёт на {hp_lost or dmg}")
@@ -473,6 +556,8 @@ class CombatState:
             self.won = True
         if self.player["hp"] <= 0:
             self.lost = True
+        if self.is_player_turn:
+            self.sync_block_pools()
 
     def log(self, text):
         self.log_lines.insert(0, text)

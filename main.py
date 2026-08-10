@@ -40,6 +40,7 @@ from ui_theme import (
     draw_relic_tooltip,
     draw_map_node_tooltip,
     draw_map_depth_guides,
+    draw_map_grid_guides,
     draw_map_legend,
     draw_target_marker,
     draw_hit_pulse,
@@ -576,6 +577,8 @@ class App:
             focus = [n for n in nodes if n["visited"]] or nodes
         target_x = sum(n["x"] for n in focus) / len(focus)
         target_y = sum(n["y"] for n in focus) / len(focus)
+        if any(n["available"] and not n["visited"] for n in focus):
+            target_y -= config.sy(36)
         clip = self.map_clip_rect()
         self.map_scroll_x = int(clamp(clip.centerx - target_x, x_lo, x_hi))
         self.map_scroll_y = int(clamp(clip.centery - target_y, y_lo, y_hi))
@@ -1031,7 +1034,7 @@ class App:
         rules = pygame.Rect(60, 96, 740, 580)
         rules_content = draw_section_panel(self.screen, rules, "Правила", self.fonts, accent=accent, alpha=210)
         lines = [
-            "Карта — выбирай светящиеся узлы. Каждый шаг необратим.",
+            "Карта — выбирай светящиеся узлы. Первые 2 боя — лёгкие, после развилки — сложнее.",
             "Красные карты — атака, синие — блок, фиолетовые — силы на бой.",
             "Энергия: 3 за ход. Карт в руке: 4. Блок сгорает каждый ход.",
             "Враги показывают намерение — готовь защиту заранее.",
@@ -1228,7 +1231,8 @@ class App:
         clip = self.map_clip_rect()
         prev_clip = self.screen.get_clip()
         self.screen.set_clip(clip)
-        draw_map_depth_guides(self.screen, self.fonts, clip, nodes, x_off, y_off, accent)
+        draw_map_grid_guides(self.screen, clip, run["map"], x_off, y_off, accent)
+        draw_map_depth_guides(self.screen, self.fonts, clip, nodes, run["map"], x_off, y_off, accent)
         draw_map_paths(self.screen, nodes, accent, self.anim, x_offset=x_off, y_offset=y_off)
 
         node_rects = []
@@ -1286,7 +1290,10 @@ class App:
             draw_relic_tooltip(self.screen, self.fonts, self.mouse, relic_hits)
 
         if hovered_node:
-            threat = node_threat_label(hovered_node["type"], run["act"], self.game.combats_won)
+            threat = node_threat_label(
+                hovered_node["type"], run["act"], self.game.combats_won,
+                map_tier=hovered_node.get("tier", "hard"),
+            )
             draw_map_node_tooltip(
                 self.screen, self.fonts, self.mouse,
                 NODE_TYPES.get(hovered_node["type"], hovered_node["type"]),
@@ -1413,10 +1420,12 @@ class App:
             draw_player_sprite(surf, px, py, pw, ph)
 
         chip_hits = []
+        block_label, block_tip = c.player_block_chip()
         draw_entity_panel(
             self.screen, self.fonts, "Страж Рубежа", c.player,
             arena.x + arena_inset + shake_x, entity_y, COLORS["accent"], player_icon,
             highlight=player_turn, chip_hits=chip_hits, w=player_w, h=entity_h,
+            block_label=block_label, block_tooltip=block_tip,
         )
 
         enemy_gap = config.sx(12)
@@ -1437,11 +1446,13 @@ class App:
             def make_icon(eid=enemy.get("id", "slime"), col=enemy["color"]):
                 return lambda surf, px, py, pw, ph: draw_enemy_sprite(surf, px, py, pw, ph, eid, col)
 
+            vs_block = c.block_for_enemy(enemy) if len(living) > 1 else 0
             rect = draw_entity_panel(
                 self.screen, self.fonts, enemy["name"], enemy, ex + shake_x, entity_y, enemy["color"],
                 make_icon(), enemy.get("intent"),
                 draw_intent_icon, intent_label, intent_color, is_target, is_acting,
                 chip_hits=chip_hits, next_intent=get_next_intent(enemy), w=enemy_w, h=entity_h,
+                vs_block=vs_block,
             )
             if player_turn and not self.game.combat_end_pending:
                 def pick_target(idx=i):

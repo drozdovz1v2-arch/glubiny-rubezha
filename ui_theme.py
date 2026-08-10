@@ -413,7 +413,7 @@ def wrap_text(screen, font, text, x, y, max_w, color, line_h=18):
         screen.blit(font.render(line, True, color), (x, cy))
 
 
-def draw_entity_panel(screen, fonts, name, entity, x, y, accent, draw_icon_fn, intent=None, intent_icon_fn=None, intent_label_fn=None, intent_color_fn=None, highlight=False, acting=False, w=ENTITY_W, h=None, chip_hits=None, next_intent=None):
+def draw_entity_panel(screen, fonts, name, entity, x, y, accent, draw_icon_fn, intent=None, intent_icon_fn=None, intent_label_fn=None, intent_color_fn=None, highlight=False, acting=False, w=ENTITY_W, h=None, chip_hits=None, next_intent=None, block_label=None, block_tooltip=None, vs_block=0):
     h = h or config.sy(84)
     rect = pygame.Rect(x, y, w, h)
     border = accent if highlight or acting else COLORS["panel_border"]
@@ -441,14 +441,24 @@ def draw_entity_panel(screen, fonts, name, entity, x, y, accent, draw_icon_fn, i
         name_surf = fonts["sm"].render(short + "…", True, accent)
     screen.blit(name_surf, (tx, y + config.sy(6)))
 
-    block_txt = fonts["sm"].render(f"Блок {entity.get('block', 0)}", True, COLORS["text_dim"])
+    block_text = block_label if block_label is not None else f"Блок {entity.get('block', 0)}"
+    block_txt = fonts["sm"].render(block_text, True, COLORS["text_dim"])
     block_w = block_txt.get_width() + config.sx(14)
     block_box = pygame.Rect(x + w - block_w - config.sx(8), y + config.sy(6), block_w, config.sy(22))
     pygame.draw.rect(screen, (10, 14, 22), block_box, border_radius=6)
     screen.blit(block_txt, (block_box.x + config.sx(7), block_box.y + config.sy(3)))
     if chip_hits is not None and entity.get("block", 0) > 0:
         from icons import BLOCK_DESC
-        chip_hits.append((block_box, f"Блок {entity.get('block', 0)}", BLOCK_DESC))
+        tip = block_tooltip or BLOCK_DESC
+        chip_hits.append((block_box, block_text, tip))
+    if vs_block > 0:
+        vs_txt = fonts["sm"].render(f"← {vs_block}", True, COLORS["accent"])
+        vs_box = pygame.Rect(x + w - vs_txt.get_width() - config.sx(14), y + config.sy(30), vs_txt.get_width() + config.sx(10), config.sy(20))
+        pygame.draw.rect(screen, (10, 18, 28), vs_box, border_radius=5)
+        pygame.draw.rect(screen, COLORS["accent"], vs_box, 1, border_radius=5)
+        screen.blit(vs_txt, (vs_box.x + config.sx(5), vs_box.y + config.sy(2)))
+        if chip_hits is not None:
+            chip_hits.append((vs_box, f"Блок {vs_block} против {name}", f"Столько урона от {name} поглотит твой блок."))
 
     draw_hp_bar(screen, fonts, tx, y + config.sy(24), w - config.sx(72), entity["hp"], entity["max_hp"], h=config.sy(11))
 
@@ -881,14 +891,75 @@ def draw_map_paths(screen, nodes, accent, anim=0.0, x_offset=0, y_offset=0):
                 pygame.draw.circle(screen, lerp_color(col, accent, 0.25), mid, 4)
 
 
-def draw_map_depth_guides(screen, fonts, clip, nodes, x_offset=0, y_offset=0, accent=None):
+def draw_map_grid_guides(screen, clip, game_map, x_offset=0, y_offset=0, accent=None):
+    layout = (game_map or {}).get("_layout")
+    if not layout:
+        return
+    accent = accent or COLORS["accent"]
+    lanes = layout["lanes"]
+    col_w = layout["col_w"]
+    row_h = layout["row_h"]
+    start_x = layout["start_x"] + x_offset
+    start_y = layout["start_y"] + y_offset
+    max_row = layout["max_row"]
+    lane_col = lerp_color(accent, (48, 56, 72), 0.65)
+
+    for lane in range(lanes):
+        x_even = int(start_x + lane * col_w + col_w // 2)
+        if clip.left - col_w <= x_even <= clip.right + col_w:
+            pygame.draw.line(screen, lane_col, (x_even, clip.top), (x_even, clip.bottom), 1)
+        x_odd = int(x_even + col_w // 2)
+        if lane < lanes - 1 and clip.left - col_w <= x_odd <= clip.right + col_w:
+            for y in range(clip.top, clip.bottom, config.sy(10)):
+                if ((y - clip.top) // config.sy(10)) % 2 == 0:
+                    pygame.draw.line(screen, lane_col, (x_odd, y), (x_odd, min(y + 4, clip.bottom)), 1)
+
+    row_col = lerp_color(accent, (36, 42, 54), 0.75)
+    split_row = (game_map or {}).get("split_row")
+    for row in range(max_row):
+        y = int(start_y - row * row_h)
+        if y < clip.top - 2 or y > clip.bottom + 2:
+            continue
+        if split_row is not None and row == split_row:
+            band = pygame.Rect(clip.left + config.sx(24), y - row_h // 2, clip.width - config.sx(24), row_h)
+            glow = pygame.Surface((band.width, band.height), pygame.SRCALPHA)
+            glow.fill((*lerp_color(accent, (255, 200, 120), 0.25), 22))
+            screen.blit(glow, band.topleft)
+        pygame.draw.line(screen, row_col, (clip.left + config.sx(28), y), (clip.right, y), 1)
+
+
+def draw_map_depth_guides(screen, fonts, clip, nodes, game_map=None, x_offset=0, y_offset=0, accent=None):
     if not nodes:
         return
     accent = accent or COLORS["accent"]
+    layout = (game_map or {}).get("_layout")
+    left_x = clip.x + config.sx(8)
+    split_row = (game_map or {}).get("split_row")
+    if layout:
+        row_h = layout["row_h"]
+        start_y = layout["start_y"] + y_offset
+        max_row = layout["max_row"]
+        for row in range(max_row):
+            y = int(start_y - row * row_h)
+            if y < clip.top - 10 or y > clip.bottom + 10:
+                continue
+            if row == 0:
+                label, col = "Старт", lerp_color(accent, COLORS["text_dim"], 0.35)
+            elif row == max_row - 1:
+                label, col = "Босс", lerp_color(COLORS["danger"], COLORS["text_dim"], 0.25)
+            elif split_row is not None and row == split_row:
+                label, col = "Развилка", lerp_color(COLORS["accent_warm"], COLORS["text_dim"], 0.2)
+            elif row % 4 == 0:
+                label, col = str(row), COLORS["text_dim"]
+            else:
+                continue
+            txt = fonts["sm"].render(label, True, col)
+            screen.blit(txt, (left_x, y - txt.get_height() // 2))
+        return
+
     ys = [n["y"] + y_offset for n in nodes]
     bottom_y = max(ys)
     top_y = min(ys)
-    left_x = clip.x + config.sx(10)
     start = fonts["sm"].render("Старт ↓", True, lerp_color(accent, COLORS["text_dim"], 0.35))
     boss = fonts["sm"].render("Босс ↑", True, lerp_color(COLORS["danger"], COLORS["text_dim"], 0.25))
     screen.blit(start, (left_x, min(bottom_y + config.sy(8), clip.bottom - start.get_height() - 2)))

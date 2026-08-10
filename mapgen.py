@@ -179,14 +179,61 @@ EVENTS = [
 ]
 
 
+MAP_ROWS = 14
+MAP_COLS = 7
+MAP_EASY_UNTIL = 2
+MAP_SPLIT_ROW = 3
+
+
+def map_node_tier(row):
+    if row <= MAP_EASY_UNTIL:
+        return "easy"
+    if row == MAP_SPLIT_ROW:
+        return "split"
+    return "hard"
+
+# Шаблоны колонок для ровного распределения узлов (минимум 2 клетки между соседями).
+_ROW_SLOT_TEMPLATES = {
+    1: [(3,)],
+    2: [(1, 5), (2, 5), (1, 4), (2, 4), (0, 4), (2, 6)],
+    3: [(0, 3, 6), (1, 3, 5), (0, 2, 5), (1, 4, 6), (0, 2, 4), (2, 4, 6)],
+    4: [(0, 2, 4, 6), (1, 2, 4, 6), (0, 2, 3, 5), (0, 1, 4, 6), (1, 3, 4, 6)],
+    5: [(0, 1, 3, 5, 6), (0, 2, 3, 4, 6), (1, 2, 3, 4, 5)],
+}
+
+
+def _row_node_count(row, rows):
+    if row in (0, rows - 1):
+        return 1
+    if row <= MAP_EASY_UNTIL:
+        return 2
+    if row == MAP_SPLIT_ROW:
+        return rand_int(3, 4)
+    if row > 2 and row % 5 == 0:
+        return rand_int(2, 3)
+    return rand_int(2, 4)
+
+
+def _pick_row_slots(cols, count):
+    count = max(1, min(count, cols))
+    templates = _ROW_SLOT_TEMPLATES.get(count, _ROW_SLOT_TEMPLATES[3])
+    slots = set(pick(templates))
+    while len(slots) < count:
+        candidates = [c for c in range(cols) if c not in slots and all(abs(c - s) >= 2 for s in slots)]
+        if not candidates:
+            candidates = [c for c in range(cols) if c not in slots]
+        if not candidates:
+            break
+        slots.add(pick(candidates))
+    return slots
+
+
 def generate_map(act_index=0):
-    rows, cols = 14, 8
+    rows, cols = MAP_ROWS, MAP_COLS
     grid = []
     for row in range(rows):
-        count = 1 if row in (0, rows - 1) else rand_int(3, 5)
-        slots = set()
-        while len(slots) < count:
-            slots.add(rand_int(0, cols - 1))
+        count = _row_node_count(row, rows)
+        slots = _pick_row_slots(cols, count)
         line = []
         for col in range(cols):
             if col in slots:
@@ -195,26 +242,35 @@ def generate_map(act_index=0):
                 line.append(None)
         grid.append(line)
     _link_nodes(grid)
-    return {"grid": grid, "rows": rows, "cols": cols, "act": act_index}
+    return {
+        "grid": grid,
+        "rows": rows,
+        "cols": cols,
+        "act": act_index,
+        "split_row": MAP_SPLIT_ROW,
+        "easy_until": MAP_EASY_UNTIL,
+    }
 
 
 def _create_node(row, col, act, total_rows):
+    tier = map_node_tier(row)
     node_type = "battle"
     if row == total_rows - 1:
         node_type = "boss"
     elif row > 2 and row % 5 == 0:
         node_type = pick(["rest", "shop", "event"])
-    elif random.random() < get_difficulty()["elite_node_chance"]:
+    elif tier == "hard" and random.random() < get_difficulty()["elite_node_chance"]:
         node_type = "elite"
-    elif random.random() < get_difficulty()["rest_node_chance"]:
+    elif tier == "hard" and random.random() < get_difficulty()["rest_node_chance"]:
         node_type = "rest"
-    elif random.random() < 0.1:
+    elif tier == "hard" and random.random() < 0.1:
         node_type = pick(["shop", "event"])
     return {
         "id": f"{act}_{row}_{col}",
         "row": row,
         "col": col,
         "type": node_type,
+        "tier": tier,
         "links": [],
         "visited": False,
         "available": row == 0,
@@ -227,15 +283,26 @@ def _link_nodes(grid):
     for r in range(len(grid) - 1):
         current = [n for n in grid[r] if n]
         nxt = [n for n in grid[r + 1] if n]
+        if not current or not nxt:
+            continue
         for node in current:
             candidates = [n for n in nxt if abs(n["col"] - node["col"]) <= 1]
-            targets = candidates or nxt
-            target = pick(targets)
-            if target["id"] not in node["links"]:
-                node["links"].append(target["id"])
+            if not candidates:
+                candidates = sorted(nxt, key=lambda n: abs(n["col"] - node["col"]))[:2]
+            else:
+                candidates = sorted(candidates, key=lambda n: (abs(n["col"] - node["col"]), n["col"]))
+            link_count = 1
+            if len(candidates) > 1 and random.random() < 0.42:
+                link_count = 2
+            targets = candidates[:link_count]
+            if link_count == 2 and len(candidates) > 2 and random.random() < 0.35:
+                targets = [candidates[0], pick(candidates[1:])]
+            for target in targets:
+                if target["id"] not in node["links"]:
+                    node["links"].append(target["id"])
         for node in nxt:
             if not any(node["id"] in parent["links"] for parent in current):
-                parent = pick(current)
+                parent = min(current, key=lambda p: abs(p["col"] - node["col"]))
                 if node["id"] not in parent["links"]:
                     parent["links"].append(node["id"])
 
@@ -269,22 +336,32 @@ def layout_map(game_map, area=None):
         import ui_theme
 
         area = ui_theme.MAP_LAYOUT["map"].inflate(-config.sx(8), -config.sy(24))
-    max_col = max(n["col"] for n in nodes) + 1
+    lanes = game_map.get("cols", MAP_COLS)
     max_row = max(n["row"] for n in nodes) + 1
-    pad_x = config.sx(28)
-    pad_top = config.sy(16)
-    pad_bottom = config.sy(12)
-    usable_w = max(config.sx(320), area.width - pad_x * 2)
+    pad_x = config.sx(20)
+    pad_top = config.sy(12)
+    pad_bottom = config.sy(16)
+    usable_w = max(config.sx(360), area.width - pad_x * 2)
     usable_h = max(config.sy(280), area.height - pad_top - pad_bottom)
-    col_w = max(config.sx(108), usable_w // max_col)
-    row_h = max(config.sy(46), usable_h // max_row)
-    grid_w = max_col * col_w
+    col_w = max(config.sx(122), usable_w // lanes)
+    row_h = max(config.sy(54), usable_h // max_row)
+    grid_w = lanes * col_w
     start_x = area.x + max(pad_x, (area.width - grid_w) // 2)
     start_y = area.bottom - pad_bottom
+    game_map["_layout"] = {
+        "lanes": lanes,
+        "col_w": col_w,
+        "row_h": row_h,
+        "start_x": start_x,
+        "start_y": start_y,
+        "max_row": max_row,
+    }
     for node in nodes:
-        stagger = int(col_w * 0.14) if node["row"] % 2 else 0
-        node["x"] = start_x + node["col"] * col_w + stagger + col_w // 2
-        node["y"] = start_y - node["row"] * row_h
+        lane_x = start_x + node["col"] * col_w + col_w // 2
+        if node["row"] % 2 == 1:
+            lane_x += col_w // 2
+        node["x"] = int(lane_x)
+        node["y"] = int(start_y - node["row"] * row_h)
 
 
 def get_act_info(act_index):

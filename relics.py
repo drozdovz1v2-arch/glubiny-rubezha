@@ -276,7 +276,7 @@ def relic_bonus_block(relics, card, amount, combat=None):
 def relic_on_curse_played(relics, combat):
     if "curse_ward" not in relics:
         return
-    combat.player["block"] += 6
+    combat.add_player_block(6)
     combat.spawn_fx("block", 6, "player")
     combat.log("Оберег: +6 блока")
 
@@ -285,7 +285,7 @@ def relic_on_block_stolen(relics, combat, stolen):
     if "void_mirror" not in relics or stolen <= 0:
         return
     bonus = min(6, stolen)
-    combat.player["block"] += bonus
+    combat.add_player_block(bonus)
     combat.spawn_fx("block", bonus, "player")
     combat.log("Зеркало Пустоты: +6 блока")
 
@@ -302,10 +302,10 @@ def relic_on_potion_used(relics, combat):
 def apply_combat_start(combat):
     relics = combat.relics
     if "border_shard" in relics:
-        combat.player["block"] += 3
+        combat.add_player_block(3)
         combat.spawn_fx("block", 3, "player")
     if "sand_talisman" in relics and combat.run_act >= 1:
-        combat.player["block"] += 5
+        combat.add_player_block(5)
         combat.spawn_fx("block", 5, "player")
     if "pulse_core" in relics:
         combat.player["energy"] += 1
@@ -335,7 +335,7 @@ def check_wraith_cloak(combat, hp_lost):
     if hp_lost <= 0 or "wraith_cloak" not in combat.relics or combat.wraith_cloak_used:
         return
     combat.wraith_cloak_used = True
-    combat.player["block"] += 8
+    combat.add_player_block(8)
     combat.spawn_fx("block", 8, "player")
     combat.log("Плащ Призрака: +8 блока")
 
@@ -346,7 +346,7 @@ def check_iron_heart(combat, hp_lost):
     if combat.player["hp"] / max(1, combat.player["max_hp"]) > 0.3:
         return
     combat.iron_heart_used = True
-    combat.player["block"] += 10
+    combat.add_player_block(10)
     combat.spawn_fx("block", 10, "player")
     combat.log("Железное Сердце: +10 блока")
 

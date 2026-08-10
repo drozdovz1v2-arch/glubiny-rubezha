@@ -171,11 +171,17 @@ class Game:
     def start_combat(self, elite=False, ambush=False):
         biome = get_act_info(self.run["act"])["biome"]
         from mutators import run_modifiers
+        from mapgen import map_node_tier
+
         mods = run_modifiers(self.run)
+        node = self.run.get("current_node") or {}
+        map_tier = node.get("tier") or map_node_tier(node.get("row", 99))
         if ambush:
             enemies = roll_ambush_enemies(biome, self.run["act"], self.combats_won, mods)
         else:
-            enemies = roll_battle_enemies(biome, elite, self.run["act"], self.combats_won, mods)
+            enemies = roll_battle_enemies(
+                biome, elite, self.run["act"], self.combats_won, mods, map_tier=map_tier,
+            )
         self.combat = CombatState(self.run, enemies)
         if ambush:
             self.combat.log("⚠ Засада! Враги ослаблены, но их несколько.")

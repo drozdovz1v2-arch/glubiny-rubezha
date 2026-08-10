@@ -1,7 +1,7 @@
 import random
 
 from config import pick
-from difficulty import get_difficulty, scale_enemy, apply_run_pressure
+from difficulty import apply_map_tier, apply_run_pressure, effective_combats_won, get_difficulty, scale_enemy
 from icons import STATUS_NAMES
 
 ENEMY_DEFS = {
@@ -123,9 +123,11 @@ def _battle_pool(biome, act):
     return base
 
 
-def _finalize_enemy(enemy, act, elite=False, boss=False, combats_won=0, mutators=None):
+def _finalize_enemy(enemy, act, elite=False, boss=False, combats_won=0, mutators=None, map_tier="hard"):
+    won = effective_combats_won(combats_won, map_tier)
     scale_enemy(enemy, act, elite=elite, boss=boss)
-    apply_run_pressure(enemy, combats_won)
+    apply_run_pressure(enemy, won)
+    apply_map_tier(enemy, map_tier)
     hp_bonus = 0.0
     if mutators:
         from mutators import enemy_hp_bonus
@@ -136,20 +138,28 @@ def _finalize_enemy(enemy, act, elite=False, boss=False, combats_won=0, mutators
     return enemy
 
 
-def roll_battle_enemies(biome, elite=False, act=0, combats_won=0, mutators=None):
+def roll_battle_enemies(biome, elite=False, act=0, combats_won=0, mutators=None, map_tier="hard"):
     if elite:
         pool = ELITE_POOLS.get(biome, ELITE_POOLS["forest"])
         e = create_enemy(pick(pool))
-        enemies = [_finalize_enemy(e, act, elite=True, combats_won=combats_won, mutators=mutators)]
-        minion_chance = 1.0 if mutators and "elite_swarm" in mutators else 0.40
+        enemies = [_finalize_enemy(e, act, elite=True, combats_won=combats_won, mutators=mutators, map_tier=map_tier)]
+        minion_chance = 0.0 if map_tier in ("easy", "split") else (1.0 if mutators and "elite_swarm" in mutators else 0.40)
         if random.random() < minion_chance:
             minion = create_enemy(pick(_battle_pool(biome, act)))
             minion["name"] = f"{minion['name']} (соратник)"
-            _finalize_enemy(minion, act, combats_won=combats_won, mutators=mutators)
+            _finalize_enemy(minion, act, combats_won=combats_won, mutators=mutators, map_tier=map_tier)
             minion["max_hp"] = max(12, int(minion["max_hp"] * 0.58))
             minion["hp"] = minion["max_hp"]
             enemies.append(minion)
         return enemies
+    if map_tier != "hard":
+        pool = BIOME_ENEMIES.get(biome, BIOME_ENEMIES["forest"])
+        double_chance = 0.0 if map_tier == "easy" else 0.12
+        count = 2 if random.random() < double_chance else 1
+        return [
+            _finalize_enemy(create_enemy(pick(pool)), act, combats_won=combats_won, mutators=mutators, map_tier=map_tier)
+            for _ in range(count)
+        ]
     hunter_chance = get_difficulty().get("hunter_chance", 0.0)
     if mutators:
         from mutators import hunter_bonus
@@ -173,7 +183,7 @@ def roll_battle_enemies(biome, elite=False, act=0, combats_won=0, mutators=None)
         from mutators import double_spawn_bonus
         double_chance += double_spawn_bonus(mutators)
     count = 2 if random.random() < double_chance else 1
-    return [_finalize_enemy(create_enemy(pick(pool)), act, combats_won=combats_won, mutators=mutators) for _ in range(count)]
+    return [_finalize_enemy(create_enemy(pick(pool)), act, combats_won=combats_won, mutators=mutators, map_tier=map_tier) for _ in range(count)]
 
 
 def roll_ambush_enemies(biome, act=0, combats_won=0, mutators=None):

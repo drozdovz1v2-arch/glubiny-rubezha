@@ -184,9 +184,46 @@ COLORS_PRESSURE = {
 }
 
 
-def node_threat_label(node_type, act=0, combats_won=0):
+def effective_combats_won(combats_won, map_tier="hard"):
+    if map_tier == "easy":
+        return max(0, combats_won - 3)
+    if map_tier == "split":
+        return max(0, combats_won - 1)
+    return combats_won
+
+
+def apply_map_tier(enemy, map_tier="hard"):
+    if map_tier == "easy":
+        hp_m, dmg_m = 0.72, 0.78
+    elif map_tier == "split":
+        hp_m, dmg_m = 0.88, 0.90
+    else:
+        return enemy
+    enemy["max_hp"] = max(6, int(enemy["max_hp"] * hp_m))
+    enemy["hp"] = enemy["max_hp"]
+    for key in ("patterns", "enrage_patterns"):
+        if not enemy.get(key):
+            continue
+        scaled = []
+        for p in enemy[key]:
+            np = dict(p)
+            if np.get("intent") in ("attack", "multi", "block", "buff", "debuff") and "value" in np:
+                np["value"] = max(1, int(np["value"] * dmg_m))
+            if np.get("intent") == "steal_block":
+                np["bonus_dmg"] = max(4, int(np.get("bonus_dmg", 7) * dmg_m))
+            scaled.append(np)
+        enemy[key] = scaled
+    return enemy
+
+
+def node_threat_label(node_type, act=0, combats_won=0, map_tier="hard"):
+    tier_labels = {
+        "easy": {"battle": "Лёгкая", "elite": "Опасная"},
+        "split": {"battle": "Умеренная", "elite": "Опасная"},
+        "hard": {"battle": "Умеренная", "elite": "Опасная"},
+    }
     labels = {
-        "battle": "Умеренная",
+        "battle": tier_labels.get(map_tier, tier_labels["hard"])["battle"],
         "elite": "Опасная",
         "boss": "Смертельная",
         "hunter": "Экстремальная · охотник",
@@ -196,13 +233,17 @@ def node_threat_label(node_type, act=0, combats_won=0):
     }
     base = labels.get(node_type, "?")
     if node_type in ("battle", "elite", "boss"):
-        if act >= 3:
+        if map_tier == "easy":
+            base += " · разминка"
+        elif map_tier == "split":
+            base += " · развилка"
+        elif act >= 3:
             base += " · акт IV"
         elif act >= 2:
             base += " · акт III"
         elif act >= 1:
             base += " · акт II"
-        if combats_won >= 8 and node_type == "battle":
+        if map_tier == "hard" and combats_won >= 8 and node_type == "battle":
             base += " · усилены"
     return base
 
