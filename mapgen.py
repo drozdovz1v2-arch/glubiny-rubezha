@@ -180,7 +180,7 @@ EVENTS = [
 
 
 def generate_map(act_index=0):
-    rows, cols = 14, 7
+    rows, cols = 14, 8
     grid = []
     for row in range(rows):
         count = 1 if row in (0, rows - 1) else rand_int(3, 5)
@@ -268,21 +268,22 @@ def layout_map(game_map, area=None):
     if area is None:
         import ui_theme
 
-        area = ui_theme.MAP_LAYOUT["map"].inflate(-config.sx(12), -config.sy(32))
-    max_col = max(n["col"] for n in nodes)
-    max_row = max(n["row"] for n in nodes)
-    pad_x = config.sx(40)
-    pad_top = config.sy(20)
-    pad_bottom = config.sy(28)
-    usable_w = max(config.sx(240), area.width - pad_x * 2)
-    usable_h = max(config.sy(200), area.height - pad_top - pad_bottom)
-    col_w = min(config.sx(280), max(config.sx(90), usable_w // max(max_col, 1)))
-    row_h = min(config.sy(72), max(config.sy(34), usable_h // max(max_row, 1)))
+        area = ui_theme.MAP_LAYOUT["map"].inflate(-config.sx(8), -config.sy(24))
+    max_col = max(n["col"] for n in nodes) + 1
+    max_row = max(n["row"] for n in nodes) + 1
+    pad_x = config.sx(28)
+    pad_top = config.sy(16)
+    pad_bottom = config.sy(12)
+    usable_w = max(config.sx(320), area.width - pad_x * 2)
+    usable_h = max(config.sy(280), area.height - pad_top - pad_bottom)
+    col_w = max(config.sx(108), usable_w // max_col)
+    row_h = max(config.sy(46), usable_h // max_row)
     grid_w = max_col * col_w
     start_x = area.x + max(pad_x, (area.width - grid_w) // 2)
     start_y = area.bottom - pad_bottom
     for node in nodes:
-        node["x"] = start_x + node["col"] * col_w
+        stagger = int(col_w * 0.14) if node["row"] % 2 else 0
+        node["x"] = start_x + node["col"] * col_w + stagger + col_w // 2
         node["y"] = start_y - node["row"] * row_h
 
 

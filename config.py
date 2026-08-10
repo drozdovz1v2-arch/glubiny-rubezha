@@ -76,6 +76,15 @@ NODE_TYPES = {
     "boss": "Босс",
 }
 
+NODE_COLORS = {
+    "battle": (255, 110, 95),
+    "elite": (255, 185, 80),
+    "rest": (255, 150, 70),
+    "shop": (120, 200, 255),
+    "event": (180, 140, 255),
+    "boss": (255, 80, 100),
+}
+
 CARD_TYPE_COLORS = {
     "attack": COLORS["card_attack"],
     "skill": COLORS["card_skill"],

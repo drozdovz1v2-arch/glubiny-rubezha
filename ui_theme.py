@@ -860,11 +860,11 @@ def draw_map_paths(screen, nodes, accent, anim=0.0, x_offset=0, y_offset=0):
                 continue
             active = b["available"] and not b["visited"]
             col = accent if active else (48, 56, 72)
-            width = 4 if active else 2
+            width = 5 if active else 2
             ax, ay = a["x"] + x_offset, a["y"] + y_offset
             bx, by = b["x"] + x_offset, b["y"] + y_offset
             mx = (ax + bx) // 2
-            my = (ay + by) // 2 - 12
+            my = (ay + by) // 2 - config.sy(18)
             points = [(ax, ay), (mx, my), (bx, by)]
             if active:
                 pygame.draw.lines(screen, lerp_color(accent, (0, 0, 0), 0.45), False, points, width + 2)
@@ -873,12 +873,44 @@ def draw_map_paths(screen, nodes, accent, anim=0.0, x_offset=0, y_offset=0):
                 for i, offset in enumerate((0.0, 0.33, 0.66)):
                     t = (offset + anim * 0.12 + i * 0.08) % 1.0
                     dot = _path_point(points, t)
-                    pygame.draw.circle(screen, lerp_color(accent, (255, 255, 255), 0.35), dot, 5)
-                    pygame.draw.circle(screen, accent, dot, 3)
-                pygame.draw.circle(screen, accent, (bx, by), 5)
+                    pygame.draw.circle(screen, lerp_color(accent, (255, 255, 255), 0.35), dot, 6)
+                    pygame.draw.circle(screen, accent, dot, 4)
+                pygame.draw.circle(screen, accent, (bx, by), 6)
             elif a["visited"] and b["visited"]:
                 mid = _path_point(points, 0.5)
-                pygame.draw.circle(screen, lerp_color(col, accent, 0.25), mid, 3)
+                pygame.draw.circle(screen, lerp_color(col, accent, 0.25), mid, 4)
+
+
+def draw_map_depth_guides(screen, fonts, clip, nodes, x_offset=0, y_offset=0, accent=None):
+    if not nodes:
+        return
+    accent = accent or COLORS["accent"]
+    ys = [n["y"] + y_offset for n in nodes]
+    bottom_y = max(ys)
+    top_y = min(ys)
+    left_x = clip.x + config.sx(10)
+    start = fonts["sm"].render("Старт ↓", True, lerp_color(accent, COLORS["text_dim"], 0.35))
+    boss = fonts["sm"].render("Босс ↑", True, lerp_color(COLORS["danger"], COLORS["text_dim"], 0.25))
+    screen.blit(start, (left_x, min(bottom_y + config.sy(8), clip.bottom - start.get_height() - 2)))
+    screen.blit(boss, (left_x, max(top_y - config.sy(24), clip.top + 2)))
+
+
+def draw_map_legend(screen, fonts, rect, accent=None):
+    from config import NODE_COLORS, NODE_TYPES
+
+    accent = accent or COLORS["accent"]
+    draw_panel(screen, rect, fill=(14, 18, 28), border=lerp_color(accent, COLORS["panel_border"], 0.5), radius=10, alpha=200, shadow=False)
+    keys = ("battle", "elite", "rest", "shop", "event", "boss")
+    pad = config.sx(12)
+    item_w = max(config.sx(72), (rect.width - pad * 2) // len(keys))
+    icon_off = config.sx(34)
+    for i, key in enumerate(keys):
+        ix = rect.x + pad + i * item_w + item_w // 2
+        col = NODE_COLORS.get(key, accent)
+        pygame.draw.circle(screen, col, (ix - icon_off, rect.centery), config.sy(7))
+        pygame.draw.circle(screen, lerp_color(col, (255, 255, 255), 0.35), (ix - icon_off, rect.centery), config.sy(7), 1)
+        txt = fonts["sm"].render(NODE_TYPES[key], True, COLORS["text_dim"])
+        screen.blit(txt, txt.get_rect(midleft=(ix - icon_off + config.sx(12), rect.centery)))
 
 
 def draw_volume_slider(screen, fonts, rect, label, value, accent):
@@ -993,30 +1025,77 @@ def draw_achievements_grid(screen, fonts, meta, accent=None):
 
     accent = accent or COLORS["accent"]
     unlocked = set(meta.get("achievements", []))
-    panel = pygame.Rect(80, 96, config.SCREEN_WIDTH - 160, 520)
+    footer_h = config.sy(48)
+    panel = pygame.Rect(
+        config.sx(40), config.sy(96),
+        config.SCREEN_WIDTH - config.sx(80),
+        config.SCREEN_HEIGHT - config.sy(96) - footer_h,
+    )
     content = draw_section_panel(
         screen, panel,
         f"Достижения ({len(unlocked)}/{len(ACHIEVEMENT_DEFS)})",
         fonts, accent=accent, alpha=220,
     )
+    items = list(ACHIEVEMENT_DEFS.items())
+    pad = config.sx(12)
+    gap_x = config.sx(10)
+    gap_y = config.sy(8)
+    avail_h = max(config.sy(120), content.height - pad * 2)
+
     cols = 2
-    cw = (content.width - 24) // cols
-    for i, (aid, info) in enumerate(ACHIEVEMENT_DEFS.items()):
+    while cols < 4:
+        rows = max(1, (len(items) + cols - 1) // cols)
+        box_h = (avail_h - gap_y * (rows - 1)) // rows
+        if box_h >= config.sy(58) or cols >= 3:
+            break
+        cols += 1
+    rows = max(1, (len(items) + cols - 1) // cols)
+    box_h = max(config.sy(58), (avail_h - gap_y * (rows - 1)) // rows)
+    cw = (content.width - pad * 2 - gap_x * (cols - 1)) // cols
+
+    for i, (aid, info) in enumerate(items):
         col = i % cols
         row = i // cols
-        box = pygame.Rect(content.x + 12 + col * (cw + 8), content.y + 12 + row * 78, cw - 8, 70)
+        box = pygame.Rect(
+            content.x + pad + col * (cw + gap_x),
+            content.y + pad + row * (box_h + gap_y),
+            cw, box_h,
+        )
         done = aid in unlocked
         border = info["color"] if done else COLORS["panel_border"]
         draw_panel(screen, box, fill=(10, 14, 22), border=border, radius=10, alpha=220, shadow=False)
+
         icon = "★" if done else "○"
-        screen.blit(fonts["md"].render(icon, True, info["color"] if done else COLORS["text_dim"]), (box.x + 12, box.y + 10))
-        screen.blit(fonts["sm"].render(info["name"], True, info["color"] if done else COLORS["text_dim"]), (box.x + 36, box.y + 12))
-        wrap_text(screen, fonts["sm"], info["desc"], box.x + 36, box.y + 32, box.width - 44, COLORS["text_dim"], line_h=15)
+        icon_col = info["color"] if done else COLORS["text_dim"]
+        screen.blit(fonts["md"].render(icon, True, icon_col), (box.x + config.sx(10), box.y + config.sy(8)))
+
+        name_x = box.x + config.sx(34)
+        name_max = box.width - config.sx(42)
+        name_txt = fonts["sm"].render(info["name"], True, icon_col)
+        if name_txt.get_width() > name_max:
+            short = info["name"]
+            while short and fonts["sm"].size(short + "…")[0] > name_max:
+                short = short[:-1]
+            name_txt = fonts["sm"].render(short + "…", True, icon_col)
+        screen.blit(name_txt, (name_x, box.y + config.sy(10)))
+
+        desc_y = box.y + config.sy(30)
+        desc_h = box.height - config.sy(38)
+        if not done:
+            progress = achievement_progress(meta, aid)
+            if progress:
+                desc_h -= config.sy(16)
+        wrap_text(
+            screen, fonts["sm"], info["desc"], name_x, desc_y,
+            name_max, COLORS["text_dim"], line_h=config.sy(14),
+        )
+
         if not done:
             progress = achievement_progress(meta, aid)
             if progress:
                 prog = fonts["sm"].render(progress, True, COLORS["accent"])
-                screen.blit(prog, (box.x + 36, box.bottom - 18))
+                screen.blit(prog, (name_x, box.bottom - config.sy(18)))
+
     return content
 
 
@@ -1210,35 +1289,36 @@ def draw_map_node_tooltip(screen, fonts, mouse, label, accent=None, subtitle=Non
         screen.blit(text, (tip.x + 12, tip.y + 6 + i * 18))
 
 
-def draw_map_node(screen, x, y, node_type, color, active, visited, pulse, draw_node_icon, hovered=False):
+def draw_map_node(screen, x, y, node_type, color, active, visited, pulse, draw_node_icon, hovered=False, fonts=None, show_label=False):
+    from config import NODE_TYPES
     from sprites import draw_node_sprite
 
-    r = 28
+    r = config.sy(34)
     if active:
         for i in range(3):
             phase = pulse * 1.4 + i * 1.8
-            rr = int(r + 10 + i * 7 + math.sin(phase) * 4)
+            rr = int(r + 12 + i * 8 + math.sin(phase) * 4)
             alpha = max(10, 55 - i * 16)
             ring = pygame.Surface((rr * 2 + 4, rr * 2 + 4), pygame.SRCALPHA)
             pygame.draw.circle(ring, (*color, alpha), (rr + 2, rr + 2), rr, 2)
             screen.blit(ring, (x - rr - 2, y - rr - 2))
-        glow_r = int(r + 8 + math.sin(pulse * 1.2) * 4)
+        glow_r = int(r + 10 + math.sin(pulse * 1.2) * 4)
         glow = pygame.Surface((glow_r * 2 + 4, glow_r * 2 + 4), pygame.SRCALPHA)
         pygame.draw.circle(glow, (*color, 60), (glow_r + 2, glow_r + 2), glow_r)
         screen.blit(glow, (x - glow_r - 2, y - glow_r - 2))
 
-    sprite_size = r * 2 - 4
+    sprite_size = int(r * 2 - 6)
     bob = int(math.sin(pulse * 1.6) * 2) if active else 0
     draw_node_sprite(screen, x - sprite_size // 2, y - sprite_size // 2 + bob, sprite_size, node_type)
     border = (255, 255, 255) if active else ((90, 94, 104) if visited else (60, 64, 74))
     if hovered and active:
-        pygame.draw.circle(screen, (255, 255, 255), (x, y), r + 5, 2)
+        pygame.draw.circle(screen, (255, 255, 255), (x, y), r + 6, 2)
     pygame.draw.circle(screen, border, (x, y), r, 3 if active else 1)
     if node_type == "boss" and active:
         for i in range(4):
             ang = pulse * 0.8 + i * math.pi / 2
-            sx = int(x + math.cos(ang) * (r + 10))
-            sy = int(y + math.sin(ang) * (r + 10))
+            sx = int(x + math.cos(ang) * (r + 12))
+            sy = int(y + math.sin(ang) * (r + 12))
             pygame.draw.circle(screen, lerp_color(color, (255, 255, 255), 0.4), (sx, sy), 3)
     if visited:
         mark = pygame.Rect(x + r - 16, y - r + 2, 14, 14)
@@ -1248,7 +1328,19 @@ def draw_map_node(screen, x, y, node_type, color, active, visited, pulse, draw_n
         dim = pygame.Surface((sprite_size, sprite_size), pygame.SRCALPHA)
         dim.fill((0, 0, 0, 80))
         screen.blit(dim, (x - sprite_size // 2, y - sprite_size // 2 + bob))
-    return pygame.Rect(x - r - 4, y - r - 4, (r + 4) * 2, (r + 4) * 2)
+
+    label_h = 0
+    if show_label and fonts:
+        label = NODE_TYPES.get(node_type, node_type)
+        txt = fonts["sm"].render(label, True, (255, 255, 255) if active else COLORS["text_dim"])
+        tag = pygame.Rect(0, 0, txt.get_width() + config.sx(12), txt.get_height() + config.sy(4))
+        tag.midtop = (x, y + r + config.sy(6))
+        draw_panel(screen, tag, fill=(10, 14, 22), border=color, radius=6, alpha=210, shadow=False)
+        screen.blit(txt, txt.get_rect(center=tag.center))
+        label_h = tag.height + config.sy(8)
+
+    hit_pad = config.sy(6)
+    return pygame.Rect(x - r - hit_pad, y - r - hit_pad, (r + hit_pad) * 2, (r + hit_pad) * 2 + label_h)
 
 
 def load_fonts(scale=1.0):

@@ -6,7 +6,7 @@ import pygame
 
 from audio import Audio
 import config
-from config import COLORS, FPS, GAME_TITLE, NODE_TYPES, clamp, daily_seed, get_display_preset, has_run_save, save_meta
+from config import COLORS, FPS, GAME_TITLE, NODE_COLORS, NODE_TYPES, clamp, daily_seed, get_display_preset, has_run_save, save_meta
 from difficulty import get_difficulty, node_threat_label, pressure_tier
 from enemies import intent_color, intent_label, get_next_intent
 from game_state import ACHIEVEMENTS, ACT_TRANSITION, CODEX, COMBAT, DEFEAT, EVENT, HELP, MAP, MENU, RELIC_REWARD, REST, REST_REMOVE, REST_UPGRADE, REWARD, SETTINGS, SHOP, VICTORY, Game
@@ -39,6 +39,8 @@ from ui_theme import (
     draw_relic_strip,
     draw_relic_tooltip,
     draw_map_node_tooltip,
+    draw_map_depth_guides,
+    draw_map_legend,
     draw_target_marker,
     draw_hit_pulse,
     combat_shake_offset,
@@ -462,13 +464,23 @@ class App:
             self.do_new_run()
 
     def map_content_rect(self):
-        margin = config.sx(12)
-        top = config.sy(12) + config.sy(72) + config.sy(6)
-        bottom = config.SCREEN_HEIGHT - config.sy(28)
-        return pygame.Rect(margin, top, config.SCREEN_WIDTH - margin * 2, max(config.sy(400), bottom - top))
+        margin = config.sx(8)
+        top = config.sy(78)
+        bottom = config.SCREEN_HEIGHT - config.sy(24)
+        return pygame.Rect(margin, top, config.SCREEN_WIDTH - margin * 2, max(config.sy(420), bottom - top))
+
+    def map_legend_rect(self):
+        content = self.map_content_rect()
+        h = config.sy(38)
+        return pygame.Rect(content.x + config.sx(14), content.bottom - h - config.sy(8), content.width - config.sx(28), h)
 
     def map_clip_rect(self):
-        return self.map_content_rect().inflate(-config.sx(12), -config.sy(32))
+        legend = self.map_legend_rect()
+        inner = self.map_content_rect().inflate(-config.sx(6), -config.sy(28))
+        return pygame.Rect(inner.x, inner.y, inner.w, max(config.sy(200), legend.top - inner.y - config.sy(6)))
+
+    def map_node_hit_radius(self):
+        return config.sy(42)
 
     def refresh_map_layout(self, recenter=False):
         if not self.game.run or not self.game.run.get("map"):
@@ -487,7 +499,7 @@ class App:
             return 0, 0
         nodes = flatten_map(self.game.run["map"])
         clip = self.map_clip_rect()
-        margin = 38
+        margin = config.sy(48)
         xs = [n["x"] for n in nodes]
         scroll_min = clip.left + margin - min(xs)
         scroll_max = clip.right - margin - max(xs)
@@ -501,7 +513,7 @@ class App:
             return 0, 0
         nodes = flatten_map(self.game.run["map"])
         clip = self.map_clip_rect()
-        margin = 38
+        margin = config.sy(48)
         ys = [n["y"] for n in nodes]
         scroll_min = clip.bottom - margin - max(ys)
         scroll_max = clip.top + margin - min(ys)
@@ -515,9 +527,10 @@ class App:
             return None
         x_off = self.map_scroll_x
         y_off = self.map_scroll_y
+        hit_r = self.map_node_hit_radius()
         for node in flatten_map(self.game.run["map"]):
             nx, ny = node["x"] + x_off, node["y"] + y_off
-            if pygame.Rect(nx - 32, ny - 32, 64, 64).collidepoint(pos):
+            if pygame.Rect(nx - hit_r, ny - hit_r, hit_r * 2, hit_r * 2).collidepoint(pos):
                 return node
         return None
 
@@ -731,7 +744,7 @@ class App:
     def draw_footer_hint(self):
         hints = {
             MENU: "Enter — продолжить или новый забег  ·  Esc — выход",
-            MAP: "Клик по узлу — идти  ·  перетащи карту мышью во все стороны",
+            MAP: "Клик по подсвеченному узлу — идти  ·  перетаскивание — прокрутка карты",
             COMBAT: "1–9 — карта  ·  Z/X/C — зелья  ·  Tab — сменить цель  ·  ход передаётся автоматически" if not (self.game.combat and not self.game.combat.is_player_turn) else (self.game.combat.action_banner or "Ход врага..."),
             REWARD: "1–3 — выбрать карту  ·  S — пропустить",
             RELIC_REWARD: "1–3 — взять реликвию  ·  S — отказаться",
@@ -746,7 +759,7 @@ class App:
             VICTORY: "Enter — новый забег  ·  M — меню",
             DEFEAT: "Enter — новый забег  ·  M — меню",
             CODEX: "1/2/3 — вкладки  ·  Esc — назад",
-            ACHIEVEMENTS: "Выполняй испытания для наград  ·  Esc — назад",
+            ACHIEVEMENTS: "Esc — назад в меню",
         }
         if self.card_overlay:
             text = "←/→ — страницы  ·  Esc — закрыть"
@@ -980,13 +993,6 @@ class App:
         accent = COLORS["accent"]
         draw_top_bar(self.screen, self.fonts, "Достижения", "Награды за подвиги Стража", accent=accent)
         draw_achievements_grid(self.screen, self.fonts, self.game.meta, accent=accent)
-        draw_button(
-            self.screen, self.fonts,
-            pygame.Rect(config.SCREEN_WIDTH // 2 - 100, 630, 200, 44),
-            "Назад", self.mouse, self.buttons,
-            lambda: setattr(self.game, "screen", MENU),
-            primary=False,
-        )
 
     def set_codex_tab(self, tab):
         self.codex_tab = tab
@@ -1044,7 +1050,7 @@ class App:
             "Проклятия засоряют колоду; снять — на привале или в лавке (R).",
             "Чем больше боёв в забеге — тем сильнее враги. Элиты иногда с соратником.",
             "Акт II–III: опасные враги. Наведи на узел — увидишь уровень угрозы.",
-            "Колода: ←/→ страницы, Esc закрыть. Карта: перетаскивание мышью во все стороны.",
+            "Колода: ←/→ страницы, Esc закрыть. Карта: перетаскивание, легенда типов внизу.",
             "Enter — продолжить/новый забег. M — меню с экрана победы.",
             "Элиты и боссы опасны. Привалов мало — лечись экономно.",
             "Элиты и боссы дают реликвии — пассивные артефакты забега.",
@@ -1070,7 +1076,8 @@ class App:
         for i, (nt, label) in enumerate(NODE_TYPES.items()):
             cx = ref_content.x + 36 + (i % 2) * 170
             cy = ref_content.y + 24 + (i // 2) * 72
-            draw_map_node(self.screen, cx, cy, nt, accent, True, False, self.anim, draw_node_icon)
+            node_color = NODE_COLORS.get(nt, accent)
+            draw_map_node(self.screen, cx, cy, nt, node_color, True, False, self.anim, draw_node_icon)
             self.screen.blit(self.fonts["sm"].render(label, True, COLORS["text_dim"]), (cx + 34, cy - 8))
 
         draw_button(
@@ -1221,23 +1228,34 @@ class App:
         clip = self.map_clip_rect()
         prev_clip = self.screen.get_clip()
         self.screen.set_clip(clip)
+        draw_map_depth_guides(self.screen, self.fonts, clip, nodes, x_off, y_off, accent)
         draw_map_paths(self.screen, nodes, accent, self.anim, x_offset=x_off, y_offset=y_off)
 
         node_rects = []
         current = (self.game.run.get("current_node") or {}).get("id")
         hovered_node = None
+        hit_r = self.map_node_hit_radius()
         for node in nodes:
             active = node["available"] and not node["visited"]
             is_here = current and node["id"] == current and node["visited"]
             nx, ny = node["x"] + x_off, node["y"] + y_off
-            node_hit = pygame.Rect(nx - 32, ny - 32, 64, 64)
+            node_hit = pygame.Rect(nx - hit_r, ny - hit_r, hit_r * 2, hit_r * 2)
             hovered = active and node_hit.collidepoint(self.mouse)
             if hovered:
                 hovered_node = node
+            ntype = node["type"]
+            node_color = NODE_COLORS.get(ntype, accent)
+            if active:
+                color = node_color
+            elif node["visited"]:
+                color = tuple(int(c * 0.55 + 40) for c in node_color)
+            else:
+                color = tuple(int(c * 0.35 + 28) for c in node_color)
             nr = draw_map_node(
-                self.screen, nx, ny, node["type"],
-                accent if active else act["color"], active, node["visited"], self.anim,
+                self.screen, nx, ny, ntype,
+                color, active, node["visited"], self.anim,
                 draw_node_icon, hovered=hovered,
+                fonts=self.fonts, show_label=active or hovered,
             )
             if is_here:
                 pulse = int(32 + math.sin(self.anim * 2.2) * 4)
@@ -1272,8 +1290,9 @@ class App:
             draw_map_node_tooltip(
                 self.screen, self.fonts, self.mouse,
                 NODE_TYPES.get(hovered_node["type"], hovered_node["type"]),
-                accent=accent, subtitle=f"Угроза: {threat}",
+                accent=NODE_COLORS.get(hovered_node["type"], accent), subtitle=f"Угроза: {threat}",
             )
+        draw_map_legend(self.screen, self.fonts, self.map_legend_rect(), accent)
         self.highlight_rects["map_panel"] = map_rect
 
     def draw_card_ui(self, card, x, y, w, h, playable, on_click, hand_idx=None, hotkey=None):
