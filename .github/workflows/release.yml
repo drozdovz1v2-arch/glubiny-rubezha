@@ -57,6 +57,7 @@ jobs:
           Copy-Item dist/GlubinyRubezha/* $stage -Recurse -Force
           Copy-Item updates/manifest.json "$stage/updates/" -Force
           Copy-Item updates/github_repo.json "$stage/updates/" -Force
+          Copy-Item updates/version.json $stage -Force
           New-Item -ItemType Directory -Force -Path updates/packages | Out-Null
           Compress-Archive -Path "$stage/*" -DestinationPath "updates/packages/$zip" -Force
 
