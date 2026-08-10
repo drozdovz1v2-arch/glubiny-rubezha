@@ -2,9 +2,9 @@
   "latest": {
     "version": "0.1.0.3",
     "version_name": "alpha 0.1.0.3",
-    "release_date": "2026-08-11",
+    "release_date": "2026-08-10",
     "download_url": "https://github.com/drozdovz1v2-arch/glubiny-rubezha/releases/download/v0.1.0.3/GlubinyRubezha_beta_0.1.0.3.zip",
-    "sha256": "",
+    "sha256": "8c72efbbbea9bf8b978e7082caee92ae28c6f47ebbc01a6f847c4d75613b10c5",
     "changelog": {
       "summary": "Переработанная карта и экран достижений",
       "sections": [
