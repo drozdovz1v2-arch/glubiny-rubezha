@@ -1,0 +1,121 @@
+name: Release Game
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pygame pyinstaller
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "$env:GITHUB_REF_NAME"
+          $version = $tag -replace '^v',''
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+          echo "zip=GlubinyRubezha_beta_${version}.zip" >> $env:GITHUB_OUTPUT
+
+      - name: Build game
+        run: pyinstaller --noconfirm GlubinyRubezha.spec
+
+      - name: Pack update zip
+        shell: pwsh
+        run: |
+          $version = "${{ steps.ver.outputs.version }}"
+          $zip = "${{ steps.ver.outputs.zip }}"
+          $stage = "dist/update_package"
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          New-Item -ItemType Directory -Force -Path "$stage/updates" | Out-Null
+          Copy-Item dist/GlubinyRubezha/* $stage -Recurse -Force
+          Copy-Item updates/manifest.json "$stage/updates/" -Force
+          Copy-Item updates/github_repo.json "$stage/updates/" -Force
+          New-Item -ItemType Directory -Force -Path updates/packages | Out-Null
+          Compress-Archive -Path "$stage/*" -DestinationPath "updates/packages/$zip" -Force
+
+      - name: Compute SHA256
+        id: hash
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash "updates/packages/${{ steps.ver.outputs.zip }}" -Algorithm SHA256).Hash.ToLower()
+          echo "sha256=$hash" >> $env:GITHUB_OUTPUT
+
+      - name: Patch manifest and version files
+        shell: pwsh
+        run: |
+          $manifestPath = "updates/manifest.json"
+          $manifest = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+          $repo = "$env:GITHUB_REPOSITORY"
+          $tag = "${{ steps.ver.outputs.tag }}"
+          $zip = "${{ steps.ver.outputs.zip }}"
+          $version = "${{ steps.ver.outputs.version }}"
+          $manifest.latest.version = $version
+          $manifest.latest.version_name = "alpha $version"
+          $manifest.latest.download_url = "https://github.com/$repo/releases/download/$tag/$zip"
+          $manifest.latest.sha256 = "${{ steps.hash.outputs.sha256 }}"
+          $manifest.latest.release_date = (Get-Date -Format "yyyy-MM-dd")
+          $manifest | ConvertTo-Json -Depth 12 | Set-Content $manifestPath -Encoding UTF8
+          @"
+          {
+            "version": "$version",
+            "version_name": "alpha $version",
+            "installed_date": "$(Get-Date -Format 'yyyy-MM-dd')"
+          }
+          "@ | Set-Content updates/version.json -Encoding UTF8
+          Copy-Item updates/manifest.json manifest.release.json
+          Copy-Item updates/version.json version.release.json
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Glubiny Rubezha ${{ steps.ver.outputs.tag }}
+          body: |
+            Сборка alpha. Changelog — в лаунчере и в updates/manifest.json.
+
+            SHA256: `${{ steps.hash.outputs.sha256 }}`
+          files: |
+            updates/packages/${{ steps.ver.outputs.zip }}
+
+      - name: Sync manifest to main
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          Copy-Item manifest.release.json updates/manifest.json -Force
+          Copy-Item version.release.json updates/version.json -Force
+          git add updates/manifest.json updates/version.json
+          git diff --staged --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "chore: release ${{ steps.ver.outputs.tag }}"
+            git push origin main
+          }

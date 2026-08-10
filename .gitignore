@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+.venv/
+venv/
+
+# Сборка
+build/
+dist/
+*.spec.bak
+
+# Игра
+save.json
+crash_log.txt
+
+# IDE / OS
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
+
+# Секреты
+.env
+*.pem
