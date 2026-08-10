@@ -2,9 +2,9 @@
   "latest": {
     "version": "0.1.0.5",
     "version_name": "alpha 0.1.0.5",
-    "release_date": "2026-08-11",
+    "release_date": "2026-08-10",
     "download_url": "https://github.com/drozdovz1v2-arch/glubiny-rubezha/releases/download/v0.1.0.5/GlubinyRubezha_beta_0.1.0.5.zip",
-    "sha256": "",
+    "sha256": "ca70f20df144ca151125f76c6b42e325d30ef231a33c724865e63210ed353d17",
     "changelog": {
       "summary": "Большая карта, повторное улучшение карт, новые карты и QoL",
       "sections": [
