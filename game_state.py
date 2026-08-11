@@ -87,6 +87,8 @@ class Game:
         self.combats_won = payload.get("combats_won", 0)
         self.shop_items = payload.get("shop_items", [])
         self.combat = None
+        from potions import normalize_potions
+        self.run["potions"] = normalize_potions(self.run.get("potions", []))
         layout_map(self.run["map"])
         sync_discovered_relics(self.meta, self.run.get("relics", []))
         sync_discovered_cards(self.meta, self.run.get("deck", []))

@@ -3,67 +3,99 @@ import random
 from config import pick
 
 POTION_MAX = 3
+POTION_USES = 3
 
 POTION_DEFS = {
     "healing_draught": {
         "name": "Целебный Настой",
-        "desc": "Восстанови 20 HP.",
+        "desc": "Восстанови 20 HP. · 3 использования",
         "color": (98, 214, 130),
         "price": 50,
     },
     "iron_brew": {
         "name": "Железный Отвар",
-        "desc": "Получи 12 блока.",
+        "desc": "Получи 12 блока. · 3 использования",
         "color": (111, 168, 255),
         "price": 45,
     },
     "focus_tonic": {
         "name": "Тоник Фокуса",
-        "desc": "+1 энергия, возьми 1 карту.",
+        "desc": "+1 энергия, возьми 1 карту. · 3 использования",
         "color": (255, 204, 96),
         "price": 55,
     },
     "purify_flask": {
         "name": "Сосуд Очищения",
-        "desc": "Сними слабость и яд.",
+        "desc": "Сними слабость и яд. · 3 использования",
         "color": (180, 140, 255),
         "price": 48,
     },
     "fire_bomb": {
         "name": "Огненная Смесь",
-        "desc": "12 урона всем врагам.",
+        "desc": "12 урона всем врагам. · 3 использования",
         "color": (255, 120, 80),
         "price": 60,
     },
     "smoke_vial": {
         "name": "Дымовая Смесь",
-        "desc": "8 блока и возьми 1 карту.",
+        "desc": "8 блока и возьми 1 карту. · 3 использования",
         "color": (160, 170, 190),
         "price": 52,
     },
     "venom_phial": {
         "name": "Ядовитый Флакон",
-        "desc": "Накладывает 5 Яда на цель.",
+        "desc": "Накладывает 5 Яда на цель. · 3 использования",
         "color": (140, 210, 90),
         "price": 50,
     },
     "frost_aegis": {
         "name": "Ледяной Эгида",
-        "desc": "10 блока. Враги получают 1 Слабости.",
+        "desc": "10 блока. Враги получают 1 Слабости. · 3 использования",
         "color": (130, 190, 240),
         "price": 54,
     },
 }
 
 
+def normalize_potion(entry):
+    if isinstance(entry, str):
+        return {"id": entry, "uses": POTION_USES}
+    if isinstance(entry, dict):
+        pid = entry.get("id") or entry.get("potion_id")
+        if pid not in POTION_DEFS:
+            return None
+        uses = entry.get("uses", POTION_USES)
+        if uses <= 0:
+            return None
+        return {"id": pid, "uses": uses}
+    return None
+
+
+def normalize_potions(potions):
+    out = []
+    for entry in potions or []:
+        norm = normalize_potion(entry)
+        if norm:
+            out.append(norm)
+    return out
+
+
+def potion_id(entry):
+    if isinstance(entry, str):
+        return entry
+    return entry.get("id") if isinstance(entry, dict) else None
+
+
 def can_add_potion(run):
-    return len(run.get("potions", [])) < POTION_MAX
+    return len(normalize_potions(run.get("potions", []))) < POTION_MAX
 
 
 def add_potion(run, potion_id):
     if potion_id not in POTION_DEFS or not can_add_potion(run):
         return False
-    run.setdefault("potions", []).append(potion_id)
+    potions = normalize_potions(run.get("potions", []))
+    potions.append({"id": potion_id, "uses": POTION_USES})
+    run["potions"] = potions
     return True
 
 
@@ -114,13 +146,21 @@ def roll_elite_potion():
 def use_potion_in_combat(combat, index):
     if not combat.is_player_turn or combat.potion_used_this_turn:
         return False
-    potions = combat.potions
+    potions = normalize_potions(combat.potions)
+    combat.potions = potions
     if index < 0 or index >= len(potions):
         return False
-    pid = potions.pop(index)
+    entry = potions[index]
+    pid = entry["id"]
     info = POTION_DEFS.get(pid, {})
     combat.potion_used_this_turn = True
-    combat.log(f"Зелье: {info.get('name', pid)}")
+    entry["uses"] -= 1
+    remaining = entry["uses"]
+    if remaining > 0:
+        combat.log(f"Зелье: {info.get('name', pid)} (осталось {remaining})")
+    else:
+        potions.pop(index)
+        combat.log(f"Зелье: {info.get('name', pid)}")
     from relics import relic_on_potion_used
     relic_on_potion_used(combat.relics, combat)
 

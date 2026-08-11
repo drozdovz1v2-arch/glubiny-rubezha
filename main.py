@@ -15,6 +15,7 @@ from relics import RELIC_DEFS, draw_relic_icon
 from icons import draw_card_type_icon, draw_intent_icon, draw_node_icon, draw_potion_icon, ENEMY_BLOCK_DESC
 from potions import POTION_DEFS
 from sprites import draw_arena_character, draw_enemy_sprite, draw_event_scene, draw_menu_hero, draw_player_sprite, draw_rest_campfire, draw_shop_banner
+from lore import get_act_transition, get_defeat_lore, VICTORY_EPILOGUE
 from mapgen import flatten_map, get_act_info, layout_map
 from tutorial import TUTORIAL_STEPS
 from ui_theme import (
@@ -69,6 +70,7 @@ from ui_theme import (
     load_fonts,
     rebuild_layouts,
     wrap_text,
+    wrap_text_lines,
 )
 
 pygame.init()
@@ -264,12 +266,14 @@ class App:
             track = "menu"
         self.audio.set_music(track)
 
-    ACT_LORE = {
-        0: "Лесной Рубеж — здесь тьма просачивается сквозь корни и шёпот.",
-        1: "Пустынные Глубины — песок скрывает руины и древних стражей.",
-        2: "Ледяной Предел — холод сжимает сердце, но путь вперёд один.",
-        3: "Руины Предела — здесь реальность трескается, а Пустота смотрит в ответ.",
-    }
+    def _draw_lore_paragraphs(self, paragraphs, x, y, max_w, color, line_h=22):
+        font = self.fonts["sm"]
+        for para in paragraphs:
+            for line in wrap_text_lines(font, para, max_w):
+                self.screen.blit(font.render(line, True, color), (x, y))
+                y += line_h
+            y += config.sy(8)
+        return y
 
     def current_biome(self):
         if self.game.run and self.game.screen in (MAP, COMBAT, REWARD, REST, REST_UPGRADE, REST_REMOVE, SHOP, EVENT, RELIC_REWARD, ACT_TRANSITION):
@@ -772,7 +776,7 @@ class App:
             REST_REMOVE: "Выбери карту — затем подтверди удаление  ·  Esc — назад",
             SHOP: "1–6 — купить  ·  H — лечение  ·  R — удалить  ·  Q/Esc — уйти",
             EVENT: "1–3 — выбор  ·  наведи для подсказки  ·  Esc — в меню",
-            ACT_TRANSITION: "Enter — вперёд в новый акт  ·  Esc — в меню",
+            ACT_TRANSITION: "Enter — вперёд  ·  прочитай историю Рубежа  ·  Esc — в меню",
             HELP: "Esc — назад в меню",
             SETTINGS: "Esc — назад в меню",
             VICTORY: "Enter — новый забег  ·  M — меню",
@@ -1095,7 +1099,7 @@ class App:
             "Награда: 1–3 выбор, S — пропуск. Реликвия: 1–3, S — отказ.",
             f"Привал: 1 лечение, 2 улучшение, 3 удаление, 4 сварить зелье (−{REST_BREW_COST} зол.).",
             "Лавка: карты, зелья, артефакт, лечение (H), удаление (R).",
-            "Зелья (до 3): Z/X/C в бою, 1 за ход. Лавка, элиты, привал (4).",
+            "Зелья (до 3 слотов, по 3 использования): Z/X/C в бою, 1 за ход. Лавка, элиты, привал (4).",
             "Клятва в меню — опциональный модификатор обычного забега.",
             "Ежедневный забег — один сид, модификатор дня, победа раз в день.",
             "4 акта: лес → пустыня → лёд → руины. Финальный босс — Владыка Пустоты.",
@@ -1732,20 +1736,45 @@ class App:
     def draw_act_transition(self, accent):
         run = self.game.run
         act = get_act_info(run["act"])
-        draw_top_bar(self.screen, self.fonts, f"Акт {run['act'] + 1}", act["name"], stats=self.run_stats(run), accent=act["color"])
+        lore = get_act_transition(run["act"])
+        draw_top_bar(
+            self.screen, self.fonts,
+            f"Акт {run['act'] + 1}", act["name"],
+            stats=self.run_stats(run), accent=act["color"],
+        )
         self.draw_deck_button(run)
-        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - 320, 120, 640, 420)
-        content = draw_section_panel(self.screen, panel, "Новый Рубеж", self.fonts, accent=act["color"], alpha=220)
-        hero = pygame.Rect(content.x + 24, content.y + 16, content.width - 48, 180)
-        draw_panel(self.screen, hero, fill=(8, 12, 20), border=act["color"], radius=16, alpha=210, shadow=False)
-        draw_menu_hero(self.screen, hero.x + 40, hero.y + 20, hero.width - 80, hero.height - 40)
-        lore = self.ACT_LORE.get(run["act"], "Впереди — новые испытания Рубежа.")
-        wrap_text(self.screen, self.fonts["md"], lore, content.x + 32, content.y + 210, content.width - 64, COLORS["text"], line_h=26)
+        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - config.sx(340), config.sy(96), config.sx(680), config.sy(500))
+        heading = lore["heading"] if lore else "Новый Рубеж"
+        content = draw_section_panel(self.screen, panel, heading, self.fonts, accent=act["color"], alpha=225)
+        pad_x = content.x + config.sx(28)
+        max_w = content.width - config.sx(56)
+        y = content.y + config.sy(18)
+
+        if lore:
+            completed = self.fonts["sm"].render(f"Пройден: {lore['completed_name']}", True, COLORS["text_dim"])
+            self.screen.blit(completed, (pad_x, y))
+            y += config.sy(22)
+            boss_surf = self.fonts["md"].render(lore["boss_line"], True, act["color"])
+            self.screen.blit(boss_surf, (pad_x, y))
+            y += config.sy(28)
+            y = self._draw_lore_paragraphs(lore["body"], pad_x, y, max_w, COLORS["text"], line_h=config.sy(22))
+            thought = self.fonts["md"].render(f"«{lore['thought']}»", True, COLORS["gold"])
+            thought_y = min(y + config.sy(4), content.bottom - config.sy(130))
+            self.screen.blit(thought, (pad_x, thought_y))
+            y = thought_y + config.sy(30)
+            ahead_head = self.fonts["sm"].render(f"— {lore['ahead_title']} —", True, act["color"])
+            self.screen.blit(ahead_head, (pad_x, y))
+            y += config.sy(20)
+            self._draw_lore_paragraphs([lore["ahead"]], pad_x, y, max_w, COLORS["text_dim"], line_h=config.sy(20))
+        else:
+            fallback = "Впереди — новые испытания Рубежа. Тьма не отступает — но страж не сдаётся."
+            wrap_text(self.screen, self.fonts["md"], fallback, pad_x, y, max_w, COLORS["text"], line_h=config.sy(24))
+
         heal_note = self.fonts["sm"].render("После победы над боссом ты восстановил часть сил.", True, COLORS["success"])
-        self.screen.blit(heal_note, heal_note.get_rect(center=(content.centerx, content.y + 300)))
+        self.screen.blit(heal_note, heal_note.get_rect(center=(content.centerx, content.bottom - config.sy(62))))
         draw_button(
             self.screen, self.fonts,
-            pygame.Rect(content.centerx - 110, content.bottom - 58, 220, 48),
+            pygame.Rect(content.centerx - config.sx(110), content.bottom - config.sy(48), config.sx(220), config.sy(44)),
             "Вперёд", self.mouse, self.buttons,
             lambda: (self.audio.play("ui"), self.game.continue_act()),
         )
@@ -2074,10 +2103,24 @@ class App:
         sub = "Рубеж устоял благодаря тебе" if victory else "Тьма поглотила тебя на этот раз"
         if victory and run and run.get("daily"):
             sub = "Ежедневный Рубеж пройден!"
+        elif not victory and run:
+            sub = get_defeat_lore(run["act"])
         sub_surf = self.fonts["md"].render(sub, True, COLORS["text_dim"])
         self.screen.blit(sub_surf, sub_surf.get_rect(center=(content.centerx, content.y + 138)))
 
-        stats_box = pygame.Rect(content.x + 24, content.y + 168, content.width - 48, 130)
+        if victory:
+            lore_box = pygame.Rect(content.x + 24, content.y + 162, content.width - 48, config.sy(96))
+            draw_panel(self.screen, lore_box, fill=(12, 16, 24), border=COLORS["gold"], radius=12, alpha=210, shadow=False)
+            self.screen.blit(self.fonts["sm"].render(VICTORY_EPILOGUE["heading"], True, COLORS["gold"]), (lore_box.x + 16, lore_box.y + 10))
+            self._draw_lore_paragraphs(
+                VICTORY_EPILOGUE["body"], lore_box.x + 16, lore_box.y + config.sy(30),
+                lore_box.width - 32, COLORS["text"], line_h=config.sy(18),
+            )
+            thought = self.fonts["sm"].render(f"«{VICTORY_EPILOGUE['thought']}»", True, COLORS["accent_warm"])
+            self.screen.blit(thought, (lore_box.x + 16, lore_box.bottom - config.sy(22)))
+
+        stats_top = content.y + (268 if victory else 168)
+        stats_box = pygame.Rect(content.x + 24, stats_top, content.width - 48, 130)
         draw_panel(self.screen, stats_box, fill=(12, 16, 24), border=accent, radius=14, alpha=210, shadow=False)
         lines = [f"Всего побед: {self.game.meta.get('wins', 0)}"]
         if run:
@@ -2109,7 +2152,7 @@ class App:
             self.screen.blit(self.fonts["md"].render(line, True, color), (stats_box.x + 20, stats_box.y + 14 + i * 24))
 
         if run and run.get("relics"):
-            relic_box = pygame.Rect(content.x + 24, content.y + 282, content.width - 48, 110)
+            relic_box = pygame.Rect(content.x + 24, stats_box.bottom + config.sy(10), content.width - 48, 110)
             draw_panel(self.screen, relic_box, fill=(12, 16, 24), border=COLORS["gold"], radius=14, alpha=210, shadow=False)
             self.screen.blit(self.fonts["sm"].render("Реликвии забега", True, COLORS["gold"]), (relic_box.x + 16, relic_box.y + 10))
             relic_hits = draw_relic_strip(self.screen, self.fonts, run["relics"], relic_box.x + 16, relic_box.y + 36, max_count=8, size=24)

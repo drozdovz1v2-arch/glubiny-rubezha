@@ -184,7 +184,8 @@ class CombatState:
         self.sfx_callback = None
         self.relics = list(run.get("relics", []))
         self.meta = meta
-        self.potions = list(run.get("potions", []))
+        from potions import normalize_potions
+        self.potions = normalize_potions(run.get("potions", []))
         self.run_mutators = run_modifiers(run)
         self.run_act = run.get("act", 0)
         self.potion_used_this_turn = False

@@ -46,14 +46,14 @@ def rebuild_layouts(width=None, height=None):
     actions_h = sh(32)
     log_w = sw(280)
     gap = sw(12)
-    potion_h = sh(48)
+    potion_h = sh(56)
     potion_y = hud_y + hud_h + sh(4)
     top = potion_y + potion_h + sh(6)
     actions_y = h - footer - actions_h
     hand_y = actions_y - sh(8) - hand_h
     arena_h = hand_y - top - sh(10)
     COMBAT_LAYOUT["hud"] = pygame.Rect(margin_x, hud_y, w - margin_x * 2, hud_h)
-    COMBAT_LAYOUT["potions"] = pygame.Rect(margin_x, potion_y, sw(280), potion_h)
+    COMBAT_LAYOUT["potions"] = pygame.Rect(margin_x, potion_y, w - margin_x * 2, potion_h)
     COMBAT_LAYOUT["arena"] = pygame.Rect(margin_x, top, w - margin_x * 2, max(sh(160), arena_h))
     COMBAT_LAYOUT["log"] = pygame.Rect(margin_x, hand_y, log_w, hand_h)
     COMBAT_LAYOUT["hand"] = pygame.Rect(margin_x + log_w + gap, hand_y, w - margin_x * 2 - log_w - gap, hand_h)
@@ -792,7 +792,7 @@ def layout_action_buttons():
 
 
 def draw_potion_bar(screen, fonts, potions, mouse, buttons, on_use, accent, used_this_turn=False, draw_icon=None, panel_rect=None):
-    from potions import POTION_DEFS, POTION_MAX
+    from potions import POTION_DEFS, POTION_MAX, potion_id
 
     draw_icon = draw_icon or (lambda s, x, y, sz, pid: None)
     panel = panel_rect or COMBAT_LAYOUT.get("potions") or pygame.Rect(config.sx(16), config.sy(88), config.sx(300), config.sy(52))
@@ -800,21 +800,33 @@ def draw_potion_bar(screen, fonts, potions, mouse, buttons, on_use, accent, used
     screen.blit(fonts["sm"].render(f"Зелья ({len(potions)}/{POTION_MAX})", True, accent), (panel.x + config.sx(12), panel.y + config.sy(8)))
     keys = ("Z", "X", "C")
     slot_x = panel.x + config.sx(12)
-    slot_w = max(config.sx(72), (panel.width - config.sx(24) - config.sx(8) * 2) // 3)
+    slot_w = max(config.sx(120), (panel.width - config.sx(24) - config.sx(8) * 2) // 3)
+    slot_h = config.sy(28)
     for i in range(POTION_MAX):
-        slot = pygame.Rect(slot_x + i * (slot_w + config.sx(8)), panel.y + config.sy(24), slot_w, config.sy(22))
+        slot = pygame.Rect(slot_x + i * (slot_w + config.sx(8)), panel.y + config.sy(24), slot_w, slot_h)
         if i < len(potions):
-            pid = potions[i]
+            entry = potions[i]
+            pid = potion_id(entry)
+            uses = entry.get("uses", 3) if isinstance(entry, dict) else 3
             info = POTION_DEFS.get(pid, {})
             hovered = slot.collidepoint(mouse)
             fill = lerp_color(info.get("color", accent), (255, 255, 255), 0.12 if hovered else 0.0)
             pygame.draw.rect(screen, fill, slot, border_radius=6)
             pygame.draw.rect(screen, info.get("color", accent), slot, 1, border_radius=6)
-            draw_icon(screen, slot.x + 4, slot.y + 3, 16, pid)
-            label = fonts["sm"].render(info.get("name", pid)[:9], True, COLORS["text"])
-            screen.blit(label, (slot.x + 22, slot.y + 4))
+            draw_icon(screen, slot.x + 4, slot.y + (slot_h - 16) // 2, 16, pid)
+            charge = fonts["sm"].render(f"×{uses}", True, COLORS["text_dim"])
+            charge_x = slot.right - charge.get_width() - config.sx(4)
+            text_x = slot.x + config.sx(24)
+            text_max_w = max(config.sx(48), charge_x - text_x - config.sx(4))
+            name = info.get("name", pid)
+            lines = wrap_text_lines(fonts["sm"], name, text_max_w)[:2]
+            line_h = config.sy(14)
+            text_y = slot.y + max(config.sy(2), (slot_h - len(lines) * line_h) // 2)
+            for j, line in enumerate(lines):
+                screen.blit(fonts["sm"].render(line, True, COLORS["text"]), (text_x, text_y + j * line_h))
+            screen.blit(charge, (charge_x, slot.y + (slot_h - charge.get_height()) // 2))
             key = fonts["sm"].render(keys[i], True, COLORS["text_dim"])
-            screen.blit(key, (slot.right - 14, slot.y - 12))
+            screen.blit(key, (slot.x + config.sx(4), slot.y - config.sy(12)))
             if not used_this_turn and on_use:
                 buttons.add(slot, lambda idx=i: on_use(idx), primary=False)
         else:
