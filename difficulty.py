@@ -26,6 +26,7 @@ DIFFICULTIES = {
         "event_heal_mult": 0.85,
         "pressure_turn": 5,
         "hunter_chance": 0.06,
+        "desc": "70 HP, 5 карт за ход. Слабее враги, больше золота и привалов. Давление с 5-го хода.",
     },
     "harsh": {
         "id": "harsh",
@@ -52,6 +53,7 @@ DIFFICULTIES = {
         "event_heal_mult": 0.7,
         "pressure_turn": 5,
         "hunter_chance": 0.10,
+        "desc": "58 HP, 4 карты. Сбалансированный вызов: чаще элиты и двойные бои. Давление с 5-го хода.",
     },
     "nightmare": {
         "id": "nightmare",
@@ -78,6 +80,7 @@ DIFFICULTIES = {
         "event_heal_mult": 0.6,
         "pressure_turn": 4,
         "hunter_chance": 0.14,
+        "desc": "48 HP, 4 карты. Жёсткие враги, мало привалов и лавок. Давление с 4-го хода.",
     },
 }
 
@@ -87,6 +90,12 @@ _current = DIFFICULTIES[DEFAULT_DIFFICULTY]
 
 def get_difficulty():
     return _current
+
+
+def difficulty_desc(diff_id=None):
+    if diff_id:
+        return DIFFICULTIES.get(diff_id, _current).get("desc", "")
+    return _current.get("desc", "")
 
 
 def set_difficulty(diff_id):
@@ -111,10 +120,14 @@ def cycle_difficulty(meta):
 DIFFICULTY = _current
 
 
-def scale_enemy(enemy, act=0, elite=False, boss=False):
+def scale_enemy(enemy, act=0, elite=False, boss=False, ascension=0):
     d = get_difficulty()
     hp_mult = d["enemy_hp_mult"] + act * d["act_scaling"]
     dmg_mult = d["enemy_dmg_mult"] + act * 0.08
+    if ascension:
+        from ascension import ascension_enemy_dmg_mult, ascension_enemy_hp_mult
+        hp_mult *= ascension_enemy_hp_mult(ascension)
+        dmg_mult *= ascension_enemy_dmg_mult(ascension)
     if elite:
         hp_mult *= d["elite_hp_mult"] / d["enemy_hp_mult"]
     if boss:

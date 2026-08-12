@@ -116,6 +116,46 @@ ACHIEVEMENT_DEFS = {
         "desc": "Сними с себя яд или слабость.",
         "color": (140, 210, 255),
     },
+    "hunter_slayer": {
+        "name": "Охотник Охотников",
+        "desc": "Победи 3 охотников за один забег.",
+        "color": (220, 80, 90),
+    },
+    "ascension_3": {
+        "name": "Вознесённый",
+        "desc": "Победи на Вознесении III или выше.",
+        "color": (255, 200, 120),
+    },
+    "reach_act5": {
+        "name": "Сердце Пустоты",
+        "desc": "Дойди до акта V.",
+        "color": (180, 90, 240),
+    },
+    "steel_guardian": {
+        "name": "Стальной Страж",
+        "desc": "Победи за Стального Стража.",
+        "color": (72, 210, 200),
+    },
+    "shadow_guardian": {
+        "name": "Теневой Страж",
+        "desc": "Победи за Теневого Стража.",
+        "color": (160, 120, 220),
+    },
+    "flame_guardian": {
+        "name": "Пламенный Страж",
+        "desc": "Победи за Пламенного Стража.",
+        "color": (255, 120, 50),
+    },
+    "blessed_run": {
+        "name": "Благословенный",
+        "desc": "Победи с 3 благословениями в одном забеге.",
+        "color": (255, 204, 96),
+    },
+    "treasure_hunter": {
+        "name": "Кладоискатель",
+        "desc": "Открой 5 узлов «Сокровище» за один забег.",
+        "color": (255, 210, 80),
+    },
 }
 
 
@@ -164,6 +204,8 @@ def check_meta_achievements(meta):
         unlock_achievement(meta, "reach_act3")
     if meta.get("best_act", 0) >= 4:
         unlock_achievement(meta, "reach_act4")
+    if meta.get("best_act", 0) >= 5:
+        unlock_achievement(meta, "reach_act5")
     if meta.get("wins", 0) >= 1:
         unlock_achievement(meta, "first_win")
 
@@ -176,6 +218,18 @@ def on_victory(meta, difficulty_id, run=None):
         unlock_achievement(meta, "nightmare_win")
     if run and run.get("oath") and run.get("oath") != "none":
         unlock_achievement(meta, "oath_win")
+    if run and run.get("guardian") == "steel":
+        unlock_achievement(meta, "steel_guardian")
+    if run and run.get("guardian") == "shadow":
+        unlock_achievement(meta, "shadow_guardian")
+    if run and run.get("guardian") == "flame":
+        unlock_achievement(meta, "flame_guardian")
+    if run and len(run.get("blessings", [])) >= 3:
+        unlock_achievement(meta, "blessed_run")
+    if run and run.get("treasures_opened", 0) >= 5:
+        unlock_achievement(meta, "treasure_hunter")
+    if run and run.get("ascension", 0) >= 3:
+        unlock_achievement(meta, "ascension_3")
     if run and len(run.get("potions", [])) >= 3:
         unlock_achievement(meta, "full_belt")
     if run:
@@ -185,6 +239,11 @@ def on_victory(meta, difficulty_id, run=None):
     if meta.get("best_combats", 0) >= 15:
         unlock_achievement(meta, "combats_15")
     check_meta_achievements(meta)
+
+
+def on_hunter_slain(meta, run):
+    if run.get("hunters_killed", 0) >= 3:
+        unlock_achievement(meta, "hunter_slayer")
 
 
 def on_rest_upgrade(meta):

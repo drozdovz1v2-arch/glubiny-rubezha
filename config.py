@@ -58,6 +58,7 @@ COLORS = {
     "desert": (188, 146, 52),
     "snow": (112, 178, 210),
     "ruins": (140, 90, 180),
+    "void": (100, 60, 160),
 }
 
 ACTS = [
@@ -65,6 +66,7 @@ ACTS = [
     {"name": "Пустынные Глубины", "biome": "desert", "color": COLORS["desert"]},
     {"name": "Ледяной Предел", "biome": "snow", "color": COLORS["snow"]},
     {"name": "Руины Предела", "biome": "ruins", "color": COLORS["ruins"]},
+    {"name": "Сердце Пустоты", "biome": "void", "color": COLORS["void"]},
 ]
 
 NODE_TYPES = {
@@ -74,6 +76,7 @@ NODE_TYPES = {
     "shop": "Лавка",
     "event": "Событие",
     "boss": "Босс",
+    "treasure": "Сокровище",
 }
 
 NODE_COLORS = {
@@ -83,6 +86,7 @@ NODE_COLORS = {
     "shop": (120, 200, 255),
     "event": (180, 140, 255),
     "boss": (255, 80, 100),
+    "treasure": (255, 210, 80),
 }
 
 CARD_TYPE_COLORS = {
@@ -126,6 +130,8 @@ def load_meta():
         "relics_found": [],
         "potions_found": [],
         "oath": "none",
+        "guardian": "steel",
+        "ascension": 0,
         "best_act": 0,
         "best_combats": 0,
     }

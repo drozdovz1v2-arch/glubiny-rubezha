@@ -61,22 +61,69 @@ ENEMY_DEFS = {
                      "patterns": [{"intent": "debuff", "value": 3, "status": "poison"}, {"intent": "attack", "value": 9}, {"intent": "debuff", "value": 2, "status": "weak"}, {"intent": "attack", "value": 12}]},
     "mirror_shade": {"name": "Зеркальная Тень", "max_hp": 44, "biome": "ruins", "color": (170, 150, 220),
                      "patterns": [{"intent": "steal_block"}, {"intent": "debuff", "value": 2, "status": "vulnerable"}, {"intent": "attack", "value": 10}, {"intent": "multi", "value": 4, "hits": 2}]},
+    "sand_viper": {"name": "Песчаный Аспид", "max_hp": 36, "biome": "desert", "color": (200, 130, 50),
+                   "patterns": [{"intent": "debuff", "value": 3, "status": "poison"}, {"intent": "attack", "value": 9}, {"intent": "attack", "value": 11}]},
+    "frost_lynx": {"name": "Морозная Рысь", "max_hp": 40, "biome": "snow", "color": (140, 195, 235),
+                   "patterns": [{"intent": "multi", "value": 3, "hits": 2}, {"intent": "debuff", "value": 2, "status": "weak"}, {"intent": "attack", "value": 12}]},
+    "briar_stalker": {"name": "Шипастый Следопыт", "max_hp": 42, "biome": "forest", "color": (100, 160, 80),
+                      "patterns": [{"intent": "attack", "value": 8}, {"intent": "debuff", "value": 2, "status": "vulnerable"}, {"intent": "multi", "value": 4, "hits": 2}]},
+    "void_maw": {"name": "Пасть Пустоты", "max_hp": 46, "biome": "void", "color": (120, 70, 160),
+                 "patterns": [{"intent": "attack", "value": 10}, {"intent": "steal_block"}, {"intent": "multi", "value": 5, "hits": 2}]},
+    "crimson_hunter": {"name": "Багровый Охотник", "max_hp": 58, "biome": "ruins", "color": (220, 50, 70), "hunter": True,
+                       "patterns": [{"intent": "attack", "value": 12}, {"intent": "debuff", "value": 2, "status": "weak"}, {"intent": "multi", "value": 5, "hits": 2}, {"intent": "attack", "value": 16}]},
+    "abyss_watcher": {"name": "Страж Бездны", "max_hp": 50, "biome": "void", "color": (130, 80, 190),
+                      "patterns": [{"intent": "block", "value": 10}, {"intent": "debuff", "value": 3, "status": "vulnerable"}, {"intent": "attack", "value": 13}, {"intent": "steal_block"}]},
+    "void_heart": {"name": "Сердце Пустоты", "max_hp": 95, "biome": "void", "color": (200, 60, 240), "boss": True,
+                   "patterns": [{"intent": "attack", "value": 14}, {"intent": "multi", "value": 6, "hits": 2}, {"intent": "debuff", "value": 3, "status": "weak"}, {"intent": "steal_block"}, {"intent": "attack", "value": 22}],
+                   "enrage_patterns": [{"intent": "multi", "value": 7, "hits": 3}, {"intent": "attack", "value": 26}, {"intent": "debuff", "value": 4, "status": "vulnerable"}, {"intent": "attack", "value": 32}],
+                   "phases": [
+                       {"threshold": 0.66, "msg": "Пустота пульсирует сильнее!", "patterns": [{"intent": "multi", "value": 5, "hits": 2}, {"intent": "attack", "value": 18}, {"intent": "debuff", "value": 3, "status": "vulnerable"}, {"intent": "attack", "value": 20}]},
+                       {"threshold": 0.33, "msg": "Сердце раскрывается — финальный удар!", "patterns": [{"intent": "multi", "value": 7, "hits": 3}, {"intent": "attack", "value": 26}, {"intent": "steal_block"}, {"intent": "attack", "value": 32}]},
+                   ]},
 }
 
-BIOME_ENEMIES = {"forest": ["slime", "wolf", "spore_shaman"], "desert": ["scorpion", "slime"], "snow": ["frost_slime", "wolf"], "ruins": ["wraith", "void_shade", "void_lurker", "void_binder", "mirror_shade"]}
-BIOME_ENEMIES_HARD = {"forest": ["thorn_brute", "wolf", "moss_colossus", "spore_shaman"], "desert": ["crystal_scorpion", "scorpion", "sand_colossus"], "snow": ["blizzard_hound", "frost_slime", "rift_stalker"], "ruins": ["void_lurker", "curse_weaver", "wraith", "void_binder", "mirror_shade"]}
+BIOME_ENEMIES = {
+    "forest": ["slime", "wolf", "spore_shaman", "briar_stalker"],
+    "desert": ["scorpion", "sand_viper"],
+    "snow": ["frost_slime", "frost_lynx"],
+    "ruins": ["wraith", "void_shade", "void_lurker", "void_binder", "mirror_shade"],
+    "void": ["void_maw", "void_shade", "abyss_watcher"],
+}
+BIOME_ENEMIES_HARD = {
+    "forest": ["thorn_brute", "wolf", "moss_colossus", "spore_shaman", "briar_stalker"],
+    "desert": ["crystal_scorpion", "scorpion", "sand_colossus", "sand_viper"],
+    "snow": ["blizzard_hound", "frost_slime", "rift_stalker", "frost_lynx"],
+    "ruins": ["void_lurker", "curse_weaver", "wraith", "void_binder", "mirror_shade"],
+    "void": ["void_maw", "curse_weaver", "abyss_watcher", "void_lurker"],
+}
 ELITE_POOLS = {
     "forest": ["forest_alpha", "thorn_brute"],
     "desert": ["dune_stalker", "crystal_scorpion"],
     "snow": ["frost_wraith", "blizzard_hound"],
     "ruins": ["ruin_sentinel", "wraith", "curse_weaver"],
+    "void": ["ruin_sentinel", "abyss_watcher"],
 }
-ELITE_BY_BIOME = {"forest": "forest_alpha", "desert": "dune_stalker", "snow": "frost_wraith", "ruins": "ruin_sentinel"}
-BOSS_BY_ACT = ["blue_boss", "sand_tyrant", "ice_guardian", "void_sovereign"]
+ELITE_BY_BIOME = {"forest": "forest_alpha", "desert": "dune_stalker", "snow": "frost_wraith", "ruins": "ruin_sentinel", "void": "abyss_watcher"}
+BOSS_BY_ACT = ["blue_boss", "sand_tyrant", "ice_guardian", "void_sovereign", "void_heart"]
 
 
 def check_boss_enrage(combat, enemy):
-    if enemy["hp"] <= 0 or not enemy.get("boss") or enemy.get("enraged"):
+    if enemy["hp"] <= 0 or not enemy.get("boss"):
+        return
+    phases = enemy.get("phases")
+    if phases:
+        phase_idx = enemy.get("phase", 0)
+        while phase_idx < len(phases) and enemy["hp"] <= enemy["max_hp"] * phases[phase_idx]["threshold"]:
+            phase = phases[phase_idx]
+            enemy["patterns"] = list(phase["patterns"])
+            enemy["pattern_index"] = 0
+            enemy["intent"] = get_intent(enemy)
+            combat.log(f"⚠ {enemy['name']}: {phase.get('msg', 'новая фаза!')}")
+            phase_idx += 1
+            enemy["phase"] = phase_idx
+            enemy["enraged"] = phase_idx > 0
+        return
+    if enemy.get("enraged"):
         return
     if enemy["hp"] > enemy["max_hp"] * 0.5:
         return
@@ -114,6 +161,8 @@ def create_enemy(enemy_id):
         "elite": d.get("elite", False),
         "hunter": d.get("hunter", False),
         "enraged": False,
+        "phase": 0,
+        "affix": None,
     }
 
 
@@ -127,9 +176,9 @@ def _battle_pool(biome, act):
     return base
 
 
-def _finalize_enemy(enemy, act, elite=False, boss=False, combats_won=0, mutators=None, map_tier="hard"):
+def _finalize_enemy(enemy, act, elite=False, boss=False, combats_won=0, mutators=None, map_tier="hard", ascension=0):
     won = effective_combats_won(combats_won, map_tier)
-    scale_enemy(enemy, act, elite=elite, boss=boss)
+    scale_enemy(enemy, act, elite=elite, boss=boss, ascension=ascension)
     apply_run_pressure(enemy, won)
     apply_map_tier(enemy, map_tier)
     hp_bonus = 0.0
@@ -142,16 +191,19 @@ def _finalize_enemy(enemy, act, elite=False, boss=False, combats_won=0, mutators
     return enemy
 
 
-def roll_battle_enemies(biome, elite=False, act=0, combats_won=0, mutators=None, map_tier="hard"):
+def roll_battle_enemies(biome, elite=False, act=0, combats_won=0, mutators=None, map_tier="hard", ascension=0):
     if elite:
         pool = ELITE_POOLS.get(biome, ELITE_POOLS["forest"])
         e = create_enemy(pick(pool))
-        enemies = [_finalize_enemy(e, act, elite=True, combats_won=combats_won, mutators=mutators, map_tier=map_tier)]
+        enemies = [_finalize_enemy(e, act, elite=True, combats_won=combats_won, mutators=mutators, map_tier=map_tier, ascension=ascension)]
+        affix = roll_elite_affix()
+        if affix:
+            apply_affix(enemies[0], affix)
         minion_chance = 0.0 if map_tier in ("easy", "split") else (1.0 if mutators and "elite_swarm" in mutators else 0.40)
         if random.random() < minion_chance:
             minion = create_enemy(pick(_battle_pool(biome, act)))
             minion["name"] = f"{minion['name']} (соратник)"
-            _finalize_enemy(minion, act, combats_won=combats_won, mutators=mutators, map_tier=map_tier)
+            _finalize_enemy(minion, act, combats_won=combats_won, mutators=mutators, map_tier=map_tier, ascension=ascension)
             minion["max_hp"] = max(12, int(minion["max_hp"] * 0.58))
             minion["hp"] = minion["max_hp"]
             enemies.append(minion)
@@ -161,20 +213,24 @@ def roll_battle_enemies(biome, elite=False, act=0, combats_won=0, mutators=None,
         double_chance = 0.0 if map_tier == "easy" else 0.12
         count = 2 if random.random() < double_chance else 1
         return [
-            _finalize_enemy(create_enemy(pick(pool)), act, combats_won=combats_won, mutators=mutators, map_tier=map_tier)
+            _finalize_enemy(create_enemy(pick(pool)), act, combats_won=combats_won, mutators=mutators, map_tier=map_tier, ascension=ascension)
             for _ in range(count)
         ]
     hunter_chance = get_difficulty().get("hunter_chance", 0.0)
     if mutators:
         from mutators import hunter_bonus
         hunter_chance += hunter_bonus(mutators)
+    if ascension:
+        from ascension import ascension_hunter_bonus
+        hunter_chance += ascension_hunter_bonus(ascension)
     if act >= 1 and random.random() < hunter_chance + act * 0.02:
-        e = create_enemy("border_hunter")
-        enemies = [_finalize_enemy(e, act, combats_won=combats_won, mutators=mutators)]
+        hunter_id = "crimson_hunter" if random.random() < 0.35 else "border_hunter"
+        e = create_enemy(hunter_id)
+        enemies = [_finalize_enemy(e, act, combats_won=combats_won, mutators=mutators, map_tier=map_tier, ascension=ascension)]
         if random.random() < 0.32:
             minion = create_enemy(pick(_battle_pool(biome, act)))
             minion["name"] = f"{minion['name']} (приставка)"
-            _finalize_enemy(minion, act, combats_won=combats_won, mutators=mutators)
+            _finalize_enemy(minion, act, combats_won=combats_won, mutators=mutators, map_tier=map_tier, ascension=ascension)
             minion["max_hp"] = max(10, int(minion["max_hp"] * 0.5))
             minion["hp"] = minion["max_hp"]
             enemies.append(minion)
@@ -187,16 +243,16 @@ def roll_battle_enemies(biome, elite=False, act=0, combats_won=0, mutators=None,
         from mutators import double_spawn_bonus
         double_chance += double_spawn_bonus(mutators)
     count = 2 if random.random() < double_chance else 1
-    return [_finalize_enemy(create_enemy(pick(pool)), act, combats_won=combats_won, mutators=mutators, map_tier=map_tier) for _ in range(count)]
+    return [_finalize_enemy(create_enemy(pick(pool)), act, combats_won=combats_won, mutators=mutators, map_tier=map_tier, ascension=ascension) for _ in range(count)]
 
 
-def roll_ambush_enemies(biome, act=0, combats_won=0, mutators=None):
+def roll_ambush_enemies(biome, act=0, combats_won=0, mutators=None, ascension=0):
     pool = _battle_pool(biome, act)
     count = 2 if random.random() < 0.45 else 1
     enemies = []
     for _ in range(count):
         e = create_enemy(pick(pool))
-        _finalize_enemy(e, act, combats_won=combats_won, mutators=mutators)
+        _finalize_enemy(e, act, combats_won=combats_won, mutators=mutators, ascension=ascension)
         e["max_hp"] = max(10, int(e["max_hp"] * 0.72))
         e["hp"] = e["max_hp"]
         e["name"] = f"{e['name']} (засада)"
@@ -204,9 +260,16 @@ def roll_ambush_enemies(biome, act=0, combats_won=0, mutators=None):
     return enemies
 
 
-def roll_boss(act, combats_won=0, mutators=None):
+def roll_hunter_fight(act=0, combats_won=0, mutators=None, ascension=0):
+    hunter_id = "crimson_hunter" if random.random() < 0.4 else "border_hunter"
+    e = create_enemy(hunter_id)
+    _finalize_enemy(e, act, combats_won=combats_won, mutators=mutators, ascension=ascension)
+    return [e]
+
+
+def roll_boss(act, combats_won=0, mutators=None, ascension=0):
     e = create_enemy(BOSS_BY_ACT[act] if act < len(BOSS_BY_ACT) else BOSS_BY_ACT[0])
-    return [_finalize_enemy(e, act, boss=True, combats_won=combats_won, mutators=mutators)]
+    return [_finalize_enemy(e, act, boss=True, combats_won=combats_won, mutators=mutators, ascension=ascension)]
 
 
 def get_intent(enemy):
@@ -267,12 +330,68 @@ def get_status(target, key):
 
 
 def tick_statuses(target):
+    total = 0
+    poison = target["statuses"].get("poison", 0)
+    if poison > 0:
+        target["hp"] -= poison
+        target["statuses"]["poison"] = max(0, poison - 1)
+        total += poison
+    burn = target["statuses"].get("burn", 0)
+    if burn > 0:
+        target["hp"] -= burn
+        target["statuses"]["burn"] = max(0, burn - 1)
+        total += burn
+    return total
+
+
+def tick_poison(target):
     poison = target["statuses"].get("poison", 0)
     if poison > 0:
         target["hp"] -= poison
         target["statuses"]["poison"] = max(0, poison - 1)
         return poison
     return 0
+
+
+def tick_burn(target):
+    burn = target["statuses"].get("burn", 0)
+    if burn > 0:
+        target["hp"] -= burn
+        target["statuses"]["burn"] = max(0, burn - 1)
+        return burn
+    return 0
+
+
+AFFIX_DEFS = {
+    "armored": {"name": "Бронированный", "desc": "+28% HP", "hp_mult": 1.28},
+    "vampiric": {"name": "Вампир", "desc": "Лечится при атаке", "heal_on_attack": 4},
+    "thorns": {"name": "Шипастый", "desc": "2 урона при ударе", "thorns": 2},
+    "regenerating": {"name": "Регенератор", "desc": "+4 HP каждый ход", "regen": 4},
+}
+
+
+def affix_label(affix_id):
+    return AFFIX_DEFS.get(affix_id, {}).get("name", affix_id)
+
+
+def roll_elite_affix():
+    import random
+    if random.random() > 0.72:
+        return None
+    return pick(list(AFFIX_DEFS.keys()))
+
+
+def apply_affix(enemy, affix_id):
+    if not affix_id:
+        return
+    info = AFFIX_DEFS.get(affix_id, {})
+    enemy["affix"] = affix_id
+    hp_mult = info.get("hp_mult", 1.0)
+    if hp_mult != 1.0:
+        enemy["max_hp"] = max(1, int(enemy["max_hp"] * hp_mult))
+        enemy["hp"] = enemy["max_hp"]
+    label = info.get("name", affix_id)
+    enemy["name"] = f"{enemy['name']} ({label})"
 
 
 def decay_statuses(target):

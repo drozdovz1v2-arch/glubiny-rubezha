@@ -136,6 +136,46 @@ RELIC_DEFS = {
         "desc": "Первый дебафф за ход — возьми 1 карту.",
         "color": (170, 120, 220),
     },
+    "hunter_token": {
+        "name": "Жетон Охотника",
+        "desc": "+22 золота после победы над охотником.",
+        "color": (220, 80, 90),
+    },
+    "steel_core": {
+        "name": "Стальное Сердце",
+        "desc": "При подборе: +5 max HP и лечение.",
+        "color": (72, 210, 200),
+    },
+    "shadow_veil": {
+        "name": "Теневая Вуаль",
+        "desc": "Первый яд за бой накладывает +2 яда.",
+        "color": (160, 120, 220),
+    },
+    "void_echo": {
+        "name": "Эхо Пустоты",
+        "desc": "В начале боя враги получают 1 слабости.",
+        "color": (140, 90, 200),
+    },
+    "ember_charm": {
+        "name": "Угольный Амулет",
+        "desc": "Ожог накладывается на +1 сильнее.",
+        "color": (255, 120, 50),
+    },
+    "affix_lens": {
+        "name": "Линза Элиты",
+        "desc": "В начале боя элита раскрывает свой аффикс.",
+        "color": (255, 185, 80),
+    },
+    "treasure_compass": {
+        "name": "Компас Сокровищ",
+        "desc": "Узлы «Сокровище» дают +25 золота.",
+        "color": (255, 210, 80),
+    },
+    "blessing_chalice": {
+        "name": "Чаша Благословения",
+        "desc": "При получении благословения лечит 5 HP.",
+        "color": (98, 214, 130),
+    },
 }
 
 BOSS_RELICS = {"crown_shard", "abyss_heart", "storm_ring", "void_crown"}
@@ -217,6 +257,9 @@ def add_relic(run, relic_id):
         if relic_id == "crown_shard":
             run["max_hp"] = run.get("max_hp", 58) + 8
             run["hp"] = min(run["max_hp"], run.get("hp", 0) + 8)
+        if relic_id == "steel_core":
+            run["max_hp"] = run.get("max_hp", 58) + 5
+            run["hp"] = min(run["max_hp"], run.get("hp", 0) + 5)
 
 
 def grant_random_relic(run):
@@ -253,13 +296,26 @@ def relic_on_attack_hit(relics, combat, enemy):
         combat.log(f"Печать: +1 уязвимость -> {enemy['name']}")
 
 
-def relic_bonus_poison(relics, amount):
+def relic_bonus_poison(relics, amount, combat=None):
     if "venom_vial" in relics:
         amount += 1
+    if combat and combat.run.get("guardian") == "shadow":
+        amount += 1
+    if combat and combat.player.get("powers", {}).get("night_veil"):
+        if not combat.night_veil_used:
+            amount += combat.player["powers"]["night_veil"]
+            combat.night_veil_used = True
+    if combat and "shadow_veil" in relics and not combat.shadow_veil_used:
+        amount += 2
+        combat.shadow_veil_used = True
     return amount
 
 
 def relic_bonus_block(relics, card, amount, combat=None):
+    if combat and combat.run.get("guardian") == "steel" and card and card.get("type") == "skill":
+        from cards import CARD_SCALING
+        if card.get("id") in CARD_SCALING and "block" in CARD_SCALING[card["id"]].get("stats", {}):
+            amount += 2
     if "iron_ring" in relics and card and card.get("type") == "skill":
         amount += 2
     if (
@@ -330,6 +386,16 @@ def apply_combat_start(combat):
         for enemy in combat.living_enemies():
             add_status(enemy, "vulnerable", 2)
         combat.log("Корона Пустоты: враги уязвимы")
+    if "void_echo" in relics and combat.turn == 1:
+        for enemy in combat.living_enemies():
+            add_status(enemy, "weak", 1)
+        combat.log("Эхо Пустоты: враги ослаблены")
+    if "affix_lens" in relics and combat.turn == 1:
+        for enemy in combat.living_enemies():
+            if enemy.get("affix"):
+                from enemies import affix_label, AFFIX_DEFS
+                info = AFFIX_DEFS.get(enemy["affix"], {})
+                combat.log(f"Линза: {affix_label(enemy['affix'])} — {info.get('desc', '')}")
 
 
 def relic_on_poison_applied(relics, combat):
@@ -390,6 +456,8 @@ def apply_combat_end(run, relics, node_type="battle"):
         run["hp"] = min(run["max_hp"], run.get("hp", 0) + 4)
     if "abyss_heart" in relics and node_type in ("elite", "boss"):
         run["gold"] = run.get("gold", 0) + 20
+    if "hunter_token" in relics and node_type == "hunter":
+        run["gold"] = run.get("gold", 0) + 22
 
 
 def draw_relic_icon(screen, x, y, size, relic_id):

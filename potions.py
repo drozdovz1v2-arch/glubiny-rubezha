@@ -54,6 +54,24 @@ POTION_DEFS = {
         "color": (130, 190, 240),
         "price": 54,
     },
+    "void_tonic": {
+        "name": "Тоник Пустоты",
+        "desc": "8 урона всем врагам. · 3 использования",
+        "color": (160, 100, 220),
+        "price": 58,
+    },
+    "steel_draught": {
+        "name": "Стальной Настой",
+        "desc": "14 блока. · 3 использования",
+        "color": (100, 180, 200),
+        "price": 52,
+    },
+    "hunter_brew": {
+        "name": "Настой Охотника",
+        "desc": "6 урона + 3 яда. · 3 использования",
+        "color": (220, 90, 100),
+        "price": 56,
+    },
 }
 
 
@@ -206,6 +224,23 @@ def use_potion_in_combat(combat, index):
         combat.spawn_fx("block", 10, "player")
         for enemy in combat.living_enemies():
             add_status(enemy, "weak", 1)
+    elif pid == "void_tonic":
+        from enemies import apply_block_damage, check_boss_enrage
+        for enemy in combat.living_enemies():
+            hp_lost = apply_block_damage(enemy, 8)
+            combat.spawn_fx("damage", hp_lost, enemy)
+            check_boss_enrage(combat, enemy)
+    elif pid == "steel_draught":
+        combat.add_player_block(14)
+        combat.spawn_fx("block", 14, "player")
+    elif pid == "hunter_brew":
+        from enemies import add_status, apply_block_damage, check_boss_enrage
+        enemy = combat.target_enemy()
+        if enemy:
+            hp_lost = apply_block_damage(enemy, 6)
+            add_status(enemy, "poison", 3)
+            combat.spawn_fx("damage", hp_lost, enemy)
+            check_boss_enrage(combat, enemy)
 
     if not combat.living_enemies():
         combat.won = True

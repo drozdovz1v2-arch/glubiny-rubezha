@@ -113,6 +113,12 @@ def oath_label(oath_id):
     return OATH_DEFS.get(oath_id, {}).get("name", oath_id)
 
 
+def oath_desc(oath_id):
+    if not oath_id or oath_id == "none":
+        return "Обычный забег без дополнительных модификаторов."
+    return OATH_DEFS.get(oath_id, {}).get("desc", "")
+
+
 def cycle_oath(meta):
     ids = ["none"] + list(OATH_DEFS.keys())
     cur = meta.get("oath", "none")

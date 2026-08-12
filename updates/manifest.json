@@ -1,101 +1,119 @@
-{
-  "latest": {
-    "version": "0.2.0.1",
-    "version_name": "alpha 0.2.0.1",
-    "release_date": "2026-08-11",
-    "download_url": "https://github.com/drozdovz1v2-arch/glubiny-rubezha/releases/download/v0.2.0.1/GlubinyRubezha_beta_0.2.0.1.zip",
-    "sha256": "d5343094ebb4d8d4548c72550802fbed22d2fde580e6299231d08892b618f70c",
-    "changelog": {
-      "summary": "Зелья с зарядами, лор между актами и улучшения UI",
-      "sections": [
-        {
-          "title": "Зелья",
-          "items": [
-            "Каждое зелье на поясе — 3 использования вместо одного",
-            "Счётчик зарядов ×3/×2/×1 в бою; слот освобождается, когда заряды кончились",
-            "Старые сохранения автоматически получают 3 заряда"
-          ]
-        },
-        {
-          "title": "Лор и повествование",
-          "items": [
-            "Тексты после победы над боссом — переход между актами",
-            "Эпилог на экране победы и фразы на экране поражения"
-          ]
-        },
-        {
-          "title": "UI",
-          "items": [
-            "Полные названия зелий в бою — широкая панель пояса",
-            "Обновлены подсказки в справке и обучении"
-          ]
-        }
-      ]
-    }
-  },
-  "history": [
-    {
-      "version": "0.2.0.0",
-      "version_name": "alpha 0.2.0.0",
-      "release_date": "2026-08-10",
-      "changelog": {
-        "summary": "Исправления боя, новые карты и реликвии, враги, события и QoL",
-        "sections": []
-      }
-    },
-    {
-      "version": "0.1.0.5",
-      "version_name": "alpha 0.1.0.5",
-      "release_date": "2026-08-11",
-      "changelog": {
-        "summary": "Большая карта, повторное улучшение карт, новые карты и QoL",
-        "sections": []
-      }
-    },
-    {
-      "version": "0.1.0.4",
-      "version_name": "alpha 0.1.0.4",
-      "release_date": "2026-08-10",
-      "changelog": {
-        "summary": "Сетка карты, блок на каждого врага, музыка и зоны сложности",
-        "sections": []
-      }
-    },
-    {
-      "version": "0.1.0.3",
-      "version_name": "alpha 0.1.0.3",
-      "release_date": "2026-08-10",
-      "changelog": {
-        "summary": "Переработанная карта и экран достижений",
-        "sections": []
-      }
-    },
-    {
-      "version": "0.1.0.2",
-      "version_name": "alpha 0.1.0.2",
-      "release_date": "2026-08-10",
-      "changelog": {
-        "summary": "Исправление установки через лаунчер",
-        "sections": []
-      }
-    },
-    {
-      "version": "0.1.0.1",
-      "version_name": "alpha 0.1.0.1",
-      "release_date": "2026-08-10",
-      "changelog": {
-        "summary": "Кузница, уникальные карты, 7 новых карт",
-        "sections": []
-      }
-    },
-    {
-      "version": "0.1.0.0",
-      "version_name": "alpha 0.1.0.0",
-      "release_date": "2026-08-10",
-      "changelog": {
-        "summary": "Первый публичный релиз",
-        "sections": []
-      }
-    }
-  ]
-}
+{
+  "latest": {
+    "version": "0.3.0.0",
+    "version_name": "alpha 0.3.0.0 — Три Стража",
+    "release_date": "2026-08-12",
+    "download_url": "https://github.com/drozdovz1v2-arch/glubiny-rubezha/releases/download/v0.3.0.0/GlubinyRubezha_beta_0.3.0.0.zip",
+    "sha256": "",
+    "changelog": {
+      "summary": "Три Стража, благословения, элитные аффиксы, сокровища, ожог и акт V",
+      "sections": [
+        {
+          "title": "Три Стража",
+          "items": [
+            "Стальной, Теневой и Пламенный архетипы",
+            "12 эксклюзивных карт классов",
+            "Ожог — новый статус урона"
+          ]
+        },
+        {
+          "title": "Мета забега",
+          "items": [
+            "Благословения после победы над боссом",
+            "Узлы «Сокровище» на карте",
+            "Элитные аффиксы: броня, шипы, реген, вампир"
+          ]
+        },
+        {
+          "title": "Акт V и вознесение",
+          "items": [
+            "Сердце Пустоты — финальный акт с фазами босса",
+            "Вознесение I–V: элиты чаще, −1 привал на карте",
+            "Охотники Рубежа и новые события"
+          ]
+        },
+        {
+          "title": "Контент",
+          "items": [
+            "+10 карт, +5 реликвий, +2 события",
+            "Экран статистики, 3 новых достижения"
+          ]
+        }
+      ]
+    }
+  },
+  "history": [
+    {
+      "version": "0.2.0.1",
+      "version_name": "alpha 0.2.0.1",
+      "release_date": "2026-08-11",
+      "changelog": {
+        "summary": "Зелья с зарядами, лор между актами и улучшения UI",
+        "sections": []
+      }
+    },
+    {
+      "version": "0.2.0.0",
+      "version_name": "alpha 0.2.0.0",
+      "release_date": "2026-08-10",
+      "changelog": {
+        "summary": "Исправления боя, новые карты и реликвии, враги, события и QoL",
+        "sections": []
+      }
+    },
+    {
+      "version": "0.1.0.5",
+      "version_name": "alpha 0.1.0.5",
+      "release_date": "2026-08-11",
+      "changelog": {
+        "summary": "Большая карта, повторное улучшение карт, новые карты и QoL",
+        "sections": []
+      }
+    },
+    {
+      "version": "0.1.0.4",
+      "version_name": "alpha 0.1.0.4",
+      "release_date": "2026-08-10",
+      "changelog": {
+        "summary": "Сетка карты, блок на каждого врага, музыка и зоны сложности",
+        "sections": []
+      }
+    },
+    {
+      "version": "0.1.0.3",
+      "version_name": "alpha 0.1.0.3",
+      "release_date": "2026-08-10",
+      "changelog": {
+        "summary": "Переработанная карта и экран достижений",
+        "sections": []
+      }
+    },
+    {
+      "version": "0.1.0.2",
+      "version_name": "alpha 0.1.0.2",
+      "release_date": "2026-08-10",
+      "changelog": {
+        "summary": "Исправление установки через лаунчер",
+        "sections": []
+      }
+    },
+    {
+      "version": "0.1.0.1",
+      "version_name": "alpha 0.1.0.1",
+      "release_date": "2026-08-10",
+      "changelog": {
+        "summary": "Кузница, уникальные карты, 7 новых карт",
+        "sections": []
+      }
+    },
+    {
+      "version": "0.1.0.0",
+      "version_name": "alpha 0.1.0.0",
+      "release_date": "2026-08-10",
+      "changelog": {
+        "summary": "Первый публичный релиз",
+        "sections": []
+      }
+    }
+  ]
+}

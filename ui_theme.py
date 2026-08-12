@@ -1031,7 +1031,7 @@ def draw_map_depth_guides(screen, fonts, clip, nodes, game_map=None, x_offset=0,
         return
     accent = accent or COLORS["accent"]
     layout = (game_map or {}).get("_layout")
-    left_x = clip.x + config.sx(8)
+    label_x = clip.right - config.sx(6)
     split_row = (game_map or {}).get("split_row")
     if layout:
         row_h = layout["row_h"]
@@ -1052,7 +1052,7 @@ def draw_map_depth_guides(screen, fonts, clip, nodes, game_map=None, x_offset=0,
             else:
                 continue
             txt = fonts["sm"].render(label, True, col)
-            screen.blit(txt, (left_x, y - txt.get_height() // 2))
+            screen.blit(txt, (label_x - txt.get_width(), y - txt.get_height() // 2))
         return
 
     ys = [n["y"] + y_offset for n in nodes]
@@ -1060,8 +1060,8 @@ def draw_map_depth_guides(screen, fonts, clip, nodes, game_map=None, x_offset=0,
     top_y = min(ys)
     start = fonts["sm"].render("Старт ↓", True, lerp_color(accent, COLORS["text_dim"], 0.35))
     boss = fonts["sm"].render("Босс ↑", True, lerp_color(COLORS["danger"], COLORS["text_dim"], 0.25))
-    screen.blit(start, (left_x, min(bottom_y + config.sy(8), clip.bottom - start.get_height() - 2)))
-    screen.blit(boss, (left_x, max(top_y - config.sy(24), clip.top + 2)))
+    screen.blit(start, (label_x - start.get_width(), min(bottom_y + config.sy(8), clip.bottom - start.get_height() - 2)))
+    screen.blit(boss, (label_x - boss.get_width(), max(top_y - config.sy(24), clip.top + 2)))
 
 
 def draw_map_legend(screen, fonts, rect, accent=None):
@@ -1070,16 +1070,24 @@ def draw_map_legend(screen, fonts, rect, accent=None):
     accent = accent or COLORS["accent"]
     draw_panel(screen, rect, fill=(14, 18, 28), border=lerp_color(accent, COLORS["panel_border"], 0.5), radius=10, alpha=200, shadow=False)
     keys = ("battle", "elite", "rest", "shop", "event", "boss")
-    pad = config.sx(12)
-    item_w = max(config.sx(72), (rect.width - pad * 2) // len(keys))
-    icon_off = config.sx(34)
-    for i, key in enumerate(keys):
-        ix = rect.x + pad + i * item_w + item_w // 2
+    pad = config.sx(10)
+    gap = config.sx(6)
+    labels = [NODE_TYPES[key] for key in keys]
+    label_ws = [fonts["sm"].size(lbl)[0] for lbl in labels]
+    icon_r = config.sy(6)
+    icon_gap = config.sx(8)
+    item_ws = [icon_r * 2 + icon_gap + lw for lw in label_ws]
+    total_w = sum(item_ws) + gap * (len(keys) - 1)
+    start_x = rect.x + max(pad, (rect.width - total_w) // 2)
+    x = start_x
+    for key, lbl, item_w in zip(keys, labels, item_ws):
         col = NODE_COLORS.get(key, accent)
-        pygame.draw.circle(screen, col, (ix - icon_off, rect.centery), config.sy(7))
-        pygame.draw.circle(screen, lerp_color(col, (255, 255, 255), 0.35), (ix - icon_off, rect.centery), config.sy(7), 1)
-        txt = fonts["sm"].render(NODE_TYPES[key], True, COLORS["text_dim"])
-        screen.blit(txt, txt.get_rect(midleft=(ix - icon_off + config.sx(12), rect.centery)))
+        icon_x = x + icon_r
+        pygame.draw.circle(screen, col, (icon_x, rect.centery), icon_r)
+        pygame.draw.circle(screen, lerp_color(col, (255, 255, 255), 0.35), (icon_x, rect.centery), icon_r, 1)
+        txt = fonts["sm"].render(lbl, True, COLORS["text_dim"])
+        screen.blit(txt, (icon_x + icon_r + icon_gap, rect.centery - txt.get_height() // 2))
+        x += item_w + gap
 
 
 def draw_volume_slider(screen, fonts, rect, label, value, accent):
@@ -1276,25 +1284,155 @@ def draw_achievements_grid(screen, fonts, meta, accent=None):
     return content
 
 
-def draw_relic_codex(screen, fonts, meta, mouse, buttons, accent=None):
+def codex_panel_rect():
+    footer_h = config.sy(56)
+    return pygame.Rect(
+        config.sx(40), config.sy(96),
+        config.SCREEN_WIDTH - config.sx(80),
+        config.SCREEN_HEIGHT - config.sy(96) - footer_h,
+    )
+
+
+def codex_back_button_rect():
+    bw, bh = config.sx(200), config.sy(44)
+    return pygame.Rect(
+        config.SCREEN_WIDTH // 2 - bw // 2,
+        config.SCREEN_HEIGHT - config.sy(52),
+        bw, bh,
+    )
+
+
+def draw_help_screen(screen, fonts, rules_lines, mouse, anim, draw_node_icon, accent=None, scroll_y=0):
+    from config import NODE_COLORS, NODE_TYPES
+
+    accent = accent or COLORS["accent"]
+    footer_h = config.sy(56)
+    margin = config.sx(40)
+    top = config.sy(96)
+    area_h = config.SCREEN_HEIGHT - top - footer_h
+    gap = config.sx(16)
+    total_w = config.SCREEN_WIDTH - margin * 2
+    left_w = max(config.sx(320), int(total_w * 0.58))
+    right_w = max(config.sx(260), total_w - left_w - gap)
+    if left_w + right_w + gap > total_w:
+        left_w = (total_w - gap) // 2
+        right_w = total_w - gap - left_w
+
+    left_panel = pygame.Rect(margin, top, left_w, area_h)
+    right_panel = pygame.Rect(margin + left_w + gap, top, right_w, area_h)
+    left_content = draw_section_panel(screen, left_panel, "Правила", fonts, accent=accent, alpha=210)
+    right_content = draw_section_panel(screen, right_panel, "Справочник", fonts, accent=accent, alpha=210)
+
+    pad = config.sx(10)
+    line_h = config.sy(22)
+    max_w = max(config.sx(120), left_content.width - pad * 2)
+    wrapped = []
+    for line in rules_lines:
+        wrapped.extend(wrap_text_lines(fonts["sm"], line, max_w))
+    text_h = max(line_h, len(wrapped) * line_h)
+    scroll_y, max_scroll = _clamp_codex_scroll(scroll_y, text_h, left_content.height)
+
+    old_clip = screen.get_clip()
+    screen.set_clip(left_content)
+    for i, line in enumerate(wrapped):
+        y = left_content.y + pad - scroll_y + i * line_h
+        if y + line_h < left_content.y or y > left_content.bottom:
+            continue
+        if line:
+            screen.blit(fonts["sm"].render(line, True, COLORS["text"]), (left_content.x + pad, y))
+    screen.set_clip(old_clip)
+    _draw_codex_scrollbar(screen, fonts, left_content, scroll_y, max_scroll)
+
+    card_types = (("Атака", "card_attack"), ("Навык", "card_skill"), ("Сила", "card_power"), ("Проклятие", "card_curse"))
+    ry = right_content.y + config.sy(10)
+    screen.blit(fonts["sm"].render("Типы карт", True, accent), (right_content.x + config.sx(12), ry))
+    ry += config.sy(28)
+    chip_cols = 2
+    chip_w = max(config.sx(100), (right_content.width - config.sx(24) - config.sx(8)) // chip_cols)
+    for i, (label, color_key) in enumerate(card_types):
+        col = i % chip_cols
+        row = i // chip_cols
+        chip = pygame.Rect(
+            right_content.x + config.sx(12) + col * (chip_w + config.sx(8)),
+            ry + row * config.sy(44),
+            chip_w, config.sy(36),
+        )
+        pygame.draw.rect(screen, COLORS[color_key], chip, border_radius=8)
+        label_surf = fonts["sm"].render(label, True, COLORS["text"])
+        screen.blit(label_surf, label_surf.get_rect(center=chip.center))
+
+    nodes_y = ry + config.sy(96)
+    node_r = config.sy(34)
+    node_label_dx = node_r + config.sx(14)
+    screen.blit(
+        fonts["sm"].render("Узлы карты", True, accent),
+        (right_content.x + config.sx(12) + node_label_dx, nodes_y),
+    )
+    node_cols = 2
+    node_w = max(config.sx(110), (right_content.width - config.sx(24) - config.sx(8)) // node_cols)
+    node_row_h = config.sy(64)
+    for i, (nt, label) in enumerate(NODE_TYPES.items()):
+        col = i % node_cols
+        row = i // node_cols
+        cx = right_content.x + config.sx(12 + 18) + col * (node_w + config.sx(8))
+        cy = nodes_y + config.sy(40) + row * node_row_h
+        node_color = NODE_COLORS.get(nt, accent)
+        draw_map_node(screen, cx, cy, nt, node_color, True, False, anim, draw_node_icon)
+        label_surf = fonts["sm"].render(label, True, COLORS["text_dim"])
+        screen.blit(label_surf, (cx + node_label_dx, cy - label_surf.get_height() // 2))
+
+    return left_content, scroll_y, max_scroll
+
+
+def _clamp_codex_scroll(scroll_y, content_height, viewport_height):
+    max_scroll = max(0, content_height - viewport_height)
+    return max(0, min(scroll_y, max_scroll)), max_scroll
+
+
+def _draw_codex_scrollbar(screen, fonts, content, scroll_y, max_scroll):
+    if max_scroll <= 0:
+        return
+    track_h = max(config.sy(40), content.height - config.sy(10))
+    track = pygame.Rect(content.right - config.sx(8), content.y + config.sy(6), config.sx(4), track_h)
+    pygame.draw.rect(screen, (32, 38, 48), track, border_radius=2)
+    thumb_h = max(config.sy(28), int(track_h * content.height / (content.height + max_scroll)))
+    pct = scroll_y / max_scroll if max_scroll else 0
+    thumb_y = track.y + int((track_h - thumb_h) * pct)
+    pygame.draw.rect(screen, COLORS["text_dim"], pygame.Rect(track.x, thumb_y, track.width, thumb_h), border_radius=2)
+
+
+def draw_relic_codex(screen, fonts, meta, mouse, buttons, accent=None, scroll_y=0):
     from relics import RELIC_DEFS, draw_relic_icon
 
     accent = accent or COLORS["gold"]
     found = set(meta.get("relics_found", []))
-    panel = pygame.Rect(80, 96, config.SCREEN_WIDTH - 160, 520)
+    panel = codex_panel_rect()
     content = draw_section_panel(
         screen, panel,
         f"Артефакты ({len(found)}/{len(RELIC_DEFS)})",
         fonts, accent=accent, alpha=220,
     )
     cols = 4
-    cw, ch = (content.width - 56) // cols, 118
+    pad_top = config.sy(16)
+    cw, ch = (content.width - config.sx(56)) // cols, config.sy(118)
+    row_h = ch + config.sy(10)
     ids = list(RELIC_DEFS.keys())
+    rows = (len(ids) + cols - 1) // cols
+    grid_h = pad_top + rows * row_h
+    scroll_y, max_scroll = _clamp_codex_scroll(scroll_y, grid_h, content.height)
+    old_clip = screen.get_clip()
+    screen.set_clip(content)
     hovered_info = None
     for i, rid in enumerate(ids):
         col = i % cols
         row = i // cols
-        box = pygame.Rect(content.x + 16 + col * (cw + 8), content.y + 16 + row * (ch + 10), cw - 8, ch)
+        box = pygame.Rect(
+            content.x + config.sx(16) + col * (cw + config.sx(8)),
+            content.y + pad_top + row * row_h - scroll_y,
+            cw - config.sx(8), ch,
+        )
+        if box.bottom < content.y or box.y > content.bottom:
+            continue
         known = rid in found
         info = RELIC_DEFS[rid]
         border = info["color"] if known else COLORS["panel_border"]
@@ -1314,6 +1452,8 @@ def draw_relic_codex(screen, fonts, meta, mouse, buttons, accent=None):
             screen.blit(fonts["sm"].render("Неизвестно", True, COLORS["text_dim"]), (box.x + 58, box.y + 24))
         if box.collidepoint(mouse) and known:
             hovered_info = info
+    screen.set_clip(old_clip)
+    _draw_codex_scrollbar(screen, fonts, content, scroll_y, max_scroll)
     if hovered_info:
         tip_w = config.sx(248)
         pad_x = config.sx(10)
@@ -1327,7 +1467,7 @@ def draw_relic_codex(screen, fonts, meta, mouse, buttons, accent=None):
         draw_panel(screen, tip, fill=(12, 16, 24), border=hovered_info["color"], radius=10, alpha=235, shadow=True)
         screen.blit(font.render(hovered_info["name"], True, hovered_info["color"]), (tip.x + pad_x, tip.y + title_y))
         wrap_text(screen, font, desc, tip.x + pad_x, tip.y + desc_y, tip_w - pad_x * 2, COLORS["text_dim"], line_h=line_h)
-    return content
+    return content, scroll_y, max_scroll
 
 
 RARITY_LABELS = {
@@ -1357,27 +1497,38 @@ def draw_codex_tabs(screen, fonts, mouse, buttons, active_tab, on_tab, accent=No
             buttons.add(rect, lambda tid=tab_id: on_tab(tid), primary=False)
 
 
-def draw_potion_codex(screen, fonts, meta, mouse, draw_icon, accent=None):
+def draw_potion_codex(screen, fonts, meta, mouse, draw_icon, accent=None, scroll_y=0):
     from potions import POTION_DEFS
 
     accent = accent or COLORS["success"]
     found = set(meta.get("potions_found", []))
-    panel = pygame.Rect(80, 96, config.SCREEN_WIDTH - 160, 520)
+    panel = codex_panel_rect()
     content = draw_section_panel(
         screen, panel,
         f"Зелья ({len(found)}/{len(POTION_DEFS)})",
         fonts, accent=accent, alpha=220,
     )
     cols = 2
-    cw = (content.width - 40) // cols
-    ch = 88
+    pad_top = config.sy(16)
+    cw = (content.width - config.sx(40)) // cols
+    ch = config.sy(88)
+    row_h = ch + config.sy(10)
     ids = list(POTION_DEFS.keys())
+    rows = (len(ids) + cols - 1) // cols
+    grid_h = pad_top + rows * row_h
+    scroll_y, max_scroll = _clamp_codex_scroll(scroll_y, grid_h, content.height)
+    old_clip = screen.get_clip()
+    screen.set_clip(content)
     for i, pid in enumerate(ids):
         col = i % cols
         row = i // cols
-        x = content.x + 16 + col * (cw + 8)
-        y = content.y + 16 + row * (ch + 10)
-        slot = pygame.Rect(x, y, cw, ch)
+        slot = pygame.Rect(
+            content.x + config.sx(16) + col * (cw + config.sx(8)),
+            content.y + pad_top + row * row_h - scroll_y,
+            cw, ch,
+        )
+        if slot.bottom < content.y or slot.y > content.bottom:
+            continue
         known = pid in found
         info = POTION_DEFS[pid]
         fill = (18, 24, 36) if known else (10, 12, 18)
@@ -1392,28 +1543,44 @@ def draw_potion_codex(screen, fonts, meta, mouse, draw_icon, accent=None):
         else:
             q = fonts["md"].render("???", True, COLORS["text_dim"])
             screen.blit(q, q.get_rect(center=slot.center))
+    screen.set_clip(old_clip)
+    _draw_codex_scrollbar(screen, fonts, content, scroll_y, max_scroll)
+    return content, scroll_y, max_scroll
 
 
-def draw_card_codex(screen, fonts, meta, mouse, draw_type_icon, accent=None):
+def draw_card_codex(screen, fonts, meta, mouse, draw_type_icon, accent=None, scroll_y=0):
     from cards import CARD_DEFS
 
     accent = accent or COLORS["accent"]
     found = set(meta.get("cards_found", []))
-    panel = pygame.Rect(80, 96, config.SCREEN_WIDTH - 160, 520)
+    panel = codex_panel_rect()
     content = draw_section_panel(
         screen, panel,
         f"Карты ({len(found)}/{len(CARD_DEFS)})",
         fonts, accent=accent, alpha=220,
     )
     cols = 3
-    cw = (content.width - 40) // cols
-    ch = 76
+    pad_top = config.sy(12)
+    cw = (content.width - config.sx(40)) // cols
+    ch = config.sy(76)
+    row_h = ch + config.sy(8)
     ids = list(CARD_DEFS.keys())
+    rows = (len(ids) + cols - 1) // cols
+    grid_h = pad_top + rows * row_h
+    scroll_y, max_scroll = _clamp_codex_scroll(scroll_y, grid_h, content.height)
+    old_clip = screen.get_clip()
+    screen.set_clip(content)
     hovered_card = None
     for i, cid in enumerate(ids):
         col = i % cols
         row = i // cols
-        box = pygame.Rect(content.x + 12 + col * (cw + 8), content.y + 12 + row * (ch + 8), cw - 8, ch)
+        box = pygame.Rect(
+            content.x + config.sx(12) + col * (cw + config.sx(8)),
+            content.y + pad_top + row * row_h - scroll_y,
+            cw - config.sx(8), ch,
+        )
+        if box.bottom < content.y or box.y > content.bottom:
+            continue
         known = cid in found
         info = CARD_DEFS[cid]
         type_color = COLORS.get(f"card_{info['type']}", COLORS["panel_border"])
@@ -1434,9 +1601,11 @@ def draw_card_codex(screen, fonts, meta, mouse, draw_type_icon, accent=None):
             screen.blit(fonts["sm"].render("Неизвестно", True, COLORS["text_dim"]), (box.x + 48, box.y + 18))
         if box.collidepoint(mouse) and known:
             hovered_card = {**info, "id": cid}
+    screen.set_clip(old_clip)
+    _draw_codex_scrollbar(screen, fonts, content, scroll_y, max_scroll)
     if hovered_card:
         draw_card_tooltip(screen, fonts, hovered_card, mouse, draw_type_icon)
-    return content
+    return content, scroll_y, max_scroll
 
 
 def draw_achievement_toast(screen, fonts, ach_id, timer, max_timer=180, y_offset=0):

@@ -199,6 +199,67 @@ EVENTS = [
             ("Отказаться", lambda run: None, "Без последствий"),
         ],
     },
+    {
+        "id": "hunter_ambush",
+        "title": "Засада Охотника",
+        "text": "Багровый плащ мелькает между камней. Охотник Рубежа выслеживает слабых стражей.",
+        "choices": [
+            ("Принять вызов", lambda run: run.update({"pending_hunter_fight": True}), "Бой с охотником"),
+            ("Скрыться (−12 HP)", lambda run: run.update({"hp": max(1, run["hp"] - 12)}), "−12 HP"),
+            ("Подкуп (−35 зол.)", lambda run: run.update({"gold": run["gold"] - 35}) if run["gold"] >= 35 else None, "−35 зол."),
+        ],
+    },
+    {
+        "id": "void_whisper",
+        "biome": "void",
+        "title": "Шёпот Пустоты",
+        "text": "Тьма предлагает силу — цена капля крови или отказ.",
+        "choices": [
+            ("Принять (+1 энергия, −6 HP)", lambda run: run.update({"bonus_energy": run.get("bonus_energy", 0) + 1, "hp": max(1, run["hp"] - 6)}), "+1 энергия · −6 HP"),
+            ("Отвергнуть (+25 золота)", lambda run: run.update({"gold": run["gold"] + 25}), "+25 золота"),
+        ],
+    },
+    {
+        "id": "void_shrine",
+        "biome": "void",
+        "title": "Святилище Разлома",
+        "text": "Кристаллы пульсируют в такт твоему пульсу. Укрепить тело или взять дар?",
+        "choices": [
+            ("Укрепить (+8 max HP)", lambda run: run.update({"max_hp": run["max_hp"] + 8, "hp": run["hp"] + 8}), "+8 max HP"),
+            ("Принять дар", lambda run: run.update({"pending_event_reward": "rare"}), "Редкая карта"),
+        ],
+    },
+    {
+        "id": "hunter_contract",
+        "title": "Контракт Охотника",
+        "text": "Охотник предлагает сделку: золото за твою кровь — или наоборот.",
+        "choices": [
+            ("Заплатить (−30 зол., +20 HP)", lambda run: run.update({"gold": run["gold"] - 30, "hp": min(run["max_hp"], run["hp"] + 20)}) if run["gold"] >= 30 else None, "−30 зол. · +20 HP"),
+            ("Продать информацию (+40 зол.)", lambda run: run.update({"gold": run["gold"] + 40, "hp": max(1, run["hp"] - 5)}), "+40 зол. · −5 HP"),
+            ("Отказаться", lambda run: None, "Без последствий"),
+        ],
+    },
+    {
+        "id": "shrine_of_fate",
+        "title": "Святилище Судьбы",
+        "text": "Камни светятся. Принять благословение или обменять его на золото?",
+        "choices": [
+            ("Принять благословение", lambda run: run.update({"pending_blessing_pick": True}), "Случайное благословение"),
+            ("Обменять (+45 зол.)", lambda run: run.update({"gold": run["gold"] + 45}), "+45 золота"),
+            ("Уйти", lambda run: None, "Без последствий"),
+        ],
+    },
+    {
+        "id": "molten_spring",
+        "biome": "desert",
+        "title": "Расплавленный Источник",
+        "text": "Горячая вода пульсирует пламенем. Ожечь врагов или исцелиться?",
+        "choices": [
+            ("Исцелиться (+14 HP)", lambda run: run.update({"hp": min(run["max_hp"], run["hp"] + 14)}), "+14 HP"),
+            ("Принять пламя (+1 энергия)", lambda run: run.update({"bonus_energy": run.get("bonus_energy", 0) + 1}), "+1 энергия в боях"),
+            ("Ожечь тропу", lambda run: run.update({"pending_burn_ambush": True}), "Следующий бой: враги получают 3 ожога"),
+        ],
+    },
 ]
 
 
@@ -268,7 +329,7 @@ def _pick_row_slots(cols, count):
     return slots
 
 
-def generate_map(act_index=0):
+def generate_map(act_index=0, ascension=0):
     rows, cols = MAP_ROWS, MAP_COLS
     grid = []
     for row in range(rows):
@@ -277,11 +338,12 @@ def generate_map(act_index=0):
         line = []
         for col in range(cols):
             if col in slots:
-                line.append(_create_node(row, col, act_index, rows))
+                line.append(_create_node(row, col, act_index, rows, ascension=ascension))
             else:
                 line.append(None)
         grid.append(line)
     _boost_service_nodes(grid)
+    _apply_ascension_map({"grid": grid}, ascension)
     _link_nodes(grid)
     return {
         "grid": grid,
@@ -293,21 +355,38 @@ def generate_map(act_index=0):
     }
 
 
-def _create_node(row, col, act, total_rows):
+def _apply_ascension_map(map_data, ascension):
+    if ascension < 3:
+        return
+    rests = [n for row in map_data["grid"] for n in row if n and n["type"] == "rest" and not n.get("visited")]
+    if rests:
+        target = pick(rests)
+        target["type"] = "battle"
+        target["service"] = False
+
+
+def _create_node(row, col, act, total_rows, ascension=0):
     tier = map_node_tier(row)
     node_type = "battle"
     if row == total_rows - 1:
         node_type = "boss"
     elif _service_row(row, total_rows):
         node_type = _pick_service_type()
-    elif tier == "hard" and random.random() < get_difficulty()["elite_node_chance"]:
-        node_type = "elite"
-    elif tier == "hard" and random.random() < get_difficulty()["rest_node_chance"]:
-        node_type = "rest"
-    elif tier == "hard" and random.random() < get_difficulty().get("shop_node_chance", 0.12):
-        node_type = "shop"
-    elif tier == "hard" and random.random() < 0.12:
-        node_type = "event"
+    else:
+        elite_chance = get_difficulty()["elite_node_chance"]
+        if ascension >= 3:
+            from ascension import ascension_elite_bonus
+            elite_chance += ascension_elite_bonus(ascension)
+        if tier == "hard" and random.random() < elite_chance:
+            node_type = "elite"
+        elif tier == "hard" and random.random() < get_difficulty()["rest_node_chance"]:
+            node_type = "rest"
+        elif tier == "hard" and random.random() < get_difficulty().get("shop_node_chance", 0.12):
+            node_type = "shop"
+        elif tier == "hard" and random.random() < 0.12:
+            node_type = "event"
+        elif tier == "hard" and random.random() < 0.07:
+            node_type = "treasure"
     return {
         "id": f"{act}_{row}_{col}",
         "row": row,
