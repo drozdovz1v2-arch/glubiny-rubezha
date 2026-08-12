@@ -1122,8 +1122,8 @@ class App:
         pygame.quit()
         sys.exit(0)
 
-    def _menu_setting_row(self, x, y, w, prefix, value, color, callback, desc=None):
-        row_h = config.sy(42)
+    def _menu_setting_row(self, x, y, w, prefix, value, color, callback, desc=None, max_desc_lines=1):
+        row_h = config.sy(38)
         btn_w = config.sx(98)
         pad = config.sx(12)
         draw_panel(self.screen, pygame.Rect(x, y, w, row_h), fill=(18, 14, 28), border=color, radius=10, alpha=200, shadow=False)
@@ -1141,34 +1141,47 @@ class App:
         self.screen.blit(txt, (x + pad, ty))
         draw_button(
             self.screen, self.fonts,
-            pygame.Rect(x + w - btn_w - pad, y + (row_h - config.sy(30)) // 2, btn_w, config.sy(30)),
+            pygame.Rect(x + w - btn_w - pad, y + (row_h - config.sy(28)) // 2, btn_w, config.sy(28)),
             "Сменить", self.mouse, self.buttons,
             lambda: (self.audio.play("ui"), callback()),
             primary=False,
         )
-        next_y = y + row_h + config.sy(8)
+        next_y = y + row_h + config.sy(4)
         if desc:
-            line_h = config.sy(16)
-            lines = wrap_text_lines(self.fonts["sm"], desc, w - pad * 2)[:3]
+            line_h = config.sy(15)
+            lines = wrap_text_lines(self.fonts["sm"], desc, w - pad * 2)[:max_desc_lines]
             for i, line in enumerate(lines):
                 self.screen.blit(
                     self.fonts["sm"].render(line, True, COLORS["text_dim"]),
                     (x + pad, next_y + i * line_h),
                 )
-            next_y += len(lines) * line_h + config.sy(10)
-        else:
-            next_y += config.sy(2)
+            next_y += len(lines) * line_h + config.sy(6)
         return next_y
 
     def draw_menu(self):
         accent = COLORS["accent"]
         panel_w = config.sx(520)
-        panel_h = config.sy(620)
+        footer_space = config.sy(34)
+        panel_h = min(config.SCREEN_HEIGHT - footer_space - config.sy(16), config.sy(702))
         gap = config.sx(28)
         total_w = panel_w * 2 + gap
-        footer_space = config.sy(34)
         start_x = max(config.sx(16), (config.SCREEN_WIDTH - total_w) // 2)
-        start_y = max(config.sy(20), (config.SCREEN_HEIGHT - panel_h - footer_space) // 2)
+        start_y = max(config.sy(12), (config.SCREEN_HEIGHT - panel_h - footer_space) // 2)
+
+        grid = [
+            ("Обучение", lambda: self.game.replay_tutorial()),
+            ("Справка", self.open_help),
+            ("Коллекция", self.open_codex),
+            ("Статистика", lambda: setattr(self.game, "screen", STATS)),
+            ("Достижения", lambda: setattr(self.game, "screen", ACHIEVEMENTS)),
+            ("Настройки", lambda: setattr(self.game, "screen", SETTINGS)),
+            ("Выход", self.quit_game),
+        ]
+        grid_cols = 2
+        grid_rows = (len(grid) + grid_cols - 1) // grid_cols
+        grid_btn_h = config.sy(34)
+        grid_gap = config.sy(10)
+        grid_block_h = grid_rows * grid_btn_h + max(0, grid_rows - 1) * grid_gap
 
         hero_panel = pygame.Rect(start_x, start_y, panel_w, panel_h)
         hero_content = draw_section_panel(self.screen, hero_panel, "Глубины Рубежа", self.fonts, accent=accent, alpha=210)
@@ -1178,9 +1191,9 @@ class App:
         tagline = self.fonts["md"].render("Deckbuilder Roguelike", True, COLORS["text"])
         self.screen.blit(tagline, tagline.get_rect(center=(hero_content.centerx, hero_content.y + art_h + config.sy(28))))
         lore = [
-            "Четыре акта. Четыре биома. Один Страж.",
+            "Пять актов. Три архетипа. Один Страж.",
             "Собери колоду, читай намерения врагов,",
-            "дойди до Владыки Пустоты и удержи Рубеж.",
+            "дойди до Сердца Пустоты и удержи Рубеж.",
         ]
         lore_y = hero_content.y + art_h + config.sy(56)
         for i, line in enumerate(lore):
@@ -1218,7 +1231,8 @@ class App:
         pad = config.sx(18)
         inner_w = menu_content.width - pad * 2
         btn_x = menu_content.x + pad
-        y = menu_content.y + config.sy(6)
+        grid_top = menu_content.bottom - grid_block_h - config.sy(10)
+        y = menu_content.y + config.sy(4)
 
         diff = get_difficulty()
         y = self._menu_setting_row(
@@ -1272,7 +1286,7 @@ class App:
             )
             return
 
-        btn_h = config.sy(42)
+        btn_h = config.sy(40)
         if has_run_save(self.game.meta):
             draw_button(self.screen, self.fonts, pygame.Rect(btn_x, y, inner_w, btn_h), "Продолжить", self.mouse, self.buttons, self.continue_run)
             preview = self.run_save_preview()
@@ -1280,25 +1294,26 @@ class App:
                 if len(preview) > 42:
                     preview = preview[:40] + "…"
                 prev = self.fonts["sm"].render(preview, True, COLORS["accent"])
-                self.screen.blit(prev, prev.get_rect(center=(btn_x + inner_w // 2, y + btn_h + config.sy(14))))
-            y += btn_h + config.sy(30)
+                self.screen.blit(prev, prev.get_rect(center=(btn_x + inner_w // 2, y + btn_h + config.sy(12))))
+            y += btn_h + config.sy(22)
         else:
-            y += config.sy(4)
+            y += config.sy(2)
 
         new_run_rect = pygame.Rect(btn_x, y, inner_w, btn_h)
         self.highlight_rects["menu_new_run"] = new_run_rect
         draw_button(self.screen, self.fonts, new_run_rect, "Новый Забег", self.mouse, self.buttons, self.request_new_run)
-        y += btn_h + config.sy(10)
+        y += btn_h + config.sy(8)
 
         from datetime import date
         daily_done = self.game.meta.get("daily_win_date") == date.today().isoformat()
         daily_label = "Ежедневный ✓" if daily_done else "Ежедневный Забег"
+        daily_h = config.sy(36)
         draw_button(
-            self.screen, self.fonts, pygame.Rect(btn_x, y, inner_w, config.sy(38)),
+            self.screen, self.fonts, pygame.Rect(btn_x, y, inner_w, daily_h),
             daily_label, self.mouse, self.buttons, self.request_daily_run,
             primary=not daily_done,
         )
-        y += config.sy(42)
+        y += daily_h + config.sy(6)
         info = f"Сид: {daily_seed()}"
         if not daily_done:
             from mutators import MUTATOR_DEFS, roll_daily_mutators
@@ -1308,28 +1323,19 @@ class App:
         if len(info) > 48:
             info = info[:46] + "…"
         info_surf = self.fonts["sm"].render(info, True, COLORS["gold"] if not daily_done else COLORS["text_dim"])
-        self.screen.blit(info_surf, info_surf.get_rect(center=(btn_x + inner_w // 2, y + config.sy(10))))
-        y += config.sy(28)
+        self.screen.blit(info_surf, info_surf.get_rect(center=(btn_x + inner_w // 2, y + config.sy(8))))
+        if y + config.sy(22) > grid_top - config.sy(6):
+            grid_top = y + config.sy(22) + config.sy(6)
 
         col_w = (inner_w - config.sx(12)) // 2
-        grid = [
-            ("Обучение", lambda: self.game.replay_tutorial()),
-            ("Справка", self.open_help),
-            ("Коллекция", self.open_codex),
-            ("Статистика", lambda: setattr(self.game, "screen", STATS)),
-            ("Достижения", lambda: setattr(self.game, "screen", ACHIEVEMENTS)),
-            ("Настройки", lambda: setattr(self.game, "screen", SETTINGS)),
-            ("Выход", self.quit_game),
-        ]
-        row_h = config.sy(40)
         for i, (label, action) in enumerate(grid):
-            col = i % 2
-            row = i // 2
+            col = i % grid_cols
+            row = i // grid_cols
             bx = btn_x + col * (col_w + config.sx(12))
-            by = y + row * row_h
+            by = grid_top + row * (grid_btn_h + grid_gap)
             draw_button(
                 self.screen, self.fonts,
-                pygame.Rect(bx, by, col_w, config.sy(36)), label, self.mouse, self.buttons,
+                pygame.Rect(bx, by, col_w, grid_btn_h), label, self.mouse, self.buttons,
                 lambda cb=action: (self.audio.play("ui"), cb()),
                 primary=False,
             )
