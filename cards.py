@@ -5,9 +5,9 @@ from config import pick, shuffle
 from difficulty import shop_price
 
 REWARD_POOL = {
-    "common": ["heavy_blow", "shield_wall", "rally", "quick_slash", "crushing_mark", "desperate_guard", "arc_slash", "fortify", "deflect", "surge_strike", "guard_break", "iron_salve", "plague_knife"],
-    "uncommon": ["piercing_strike", "frost_edge", "venom_dagger", "battle_cry", "expose", "shatter_strike", "toxic_bloom", "phantom_cut", "void_lance", "warding_pulse", "sand_barrier", "cinder_strike", "root_snare", "vital_surge", "double_tap", "focus", "marking_shot", "purify", "reckless_charge", "hemorrhage"],
-    "rare": ["iron_will", "whirlwind", "execute", "frontier_pulse", "ruin_strike", "blood_pact", "soul_siphon", "mirror_blow", "shatter_guard", "razor_flurry", "bastion", "adrenaline_rush"],
+    "common": ["heavy_blow", "shield_wall", "rally", "quick_slash", "crushing_mark", "desperate_guard", "arc_slash", "fortify", "deflect", "surge_strike", "guard_break", "iron_salve", "plague_knife", "wild_slash"],
+    "uncommon": ["piercing_strike", "frost_edge", "venom_dagger", "battle_cry", "expose", "shatter_strike", "toxic_bloom", "phantom_cut", "void_lance", "warding_pulse", "sand_barrier", "cinder_strike", "root_snare", "vital_surge", "double_tap", "focus", "marking_shot", "purify", "reckless_charge", "hemorrhage", "aegis_strike", "shadow_stab", "toxin_wave", "night_veil", "ember_strike", "flame_wave", "barrier_pulse", "rupture", "molten_guard"],
+    "rare": ["iron_will", "whirlwind", "execute", "frontier_pulse", "ruin_strike", "blood_pact", "soul_siphon", "mirror_blow", "shatter_guard", "razor_flurry", "bastion", "adrenaline_rush", "bulwark", "shield_bash", "hold_the_line", "assassin_mark", "inferno_core", "scorch_mark", "chain_burst", "last_stand"],
 }
 
 CARD_DEFS = {
@@ -58,6 +58,24 @@ CARD_DEFS = {
     "purify": {"name": "Очищение", "type": "skill", "cost": 1, "rarity": "uncommon", "desc": "Снимает слабость и яд с себя. Возьми 1.", "effect": "purify"},
     "reckless_charge": {"name": "Безрассудный Натиск", "type": "attack", "cost": 1, "rarity": "uncommon", "desc": "11 урона. Накладывает 1 слабости на себя.", "effect": "reckless_charge"},
     "hemorrhage": {"name": "Кровотечение", "type": "attack", "cost": 1, "rarity": "uncommon", "desc": "5 урона + столько же, сколько яда на цели.", "effect": "hemorrhage"},
+    "aegis_strike": {"name": "Удар Эгиды", "type": "attack", "cost": 1, "rarity": "uncommon", "guardian": "steel", "desc": "6 урона. Даёт 4 блока.", "effect": "aegis_strike"},
+    "bulwark": {"name": "Бастионная Стена", "type": "power", "cost": 2, "rarity": "rare", "guardian": "steel", "desc": "В начале хода +2 блока.", "effect": "bulwark"},
+    "shield_bash": {"name": "Щитовой Удар", "type": "attack", "cost": 1, "rarity": "rare", "guardian": "steel", "desc": "8 урона + твой блок (до 12).", "effect": "shield_bash"},
+    "hold_the_line": {"name": "Держать Линию", "type": "skill", "cost": 1, "rarity": "rare", "guardian": "steel", "desc": "10 блока. Если HP > 50% — ещё 4.", "effect": "hold_the_line"},
+    "shadow_stab": {"name": "Теневой Укол", "type": "attack", "cost": 0, "rarity": "uncommon", "guardian": "shadow", "desc": "5 урона. +3 яда.", "effect": "shadow_stab"},
+    "toxin_wave": {"name": "Волна Токсина", "type": "skill", "cost": 1, "rarity": "uncommon", "guardian": "shadow", "desc": "4 блока. 2 яда всем врагам.", "effect": "toxin_wave"},
+    "night_veil": {"name": "Ночная Завеса", "type": "power", "cost": 1, "rarity": "uncommon", "guardian": "shadow", "desc": "Первый яд за ход +2.", "effect": "night_veil"},
+    "assassin_mark": {"name": "Метка Убийцы", "type": "attack", "cost": 1, "rarity": "rare", "guardian": "shadow", "desc": "7 урона. +урон = яду на цели.", "effect": "assassin_mark"},
+    "ember_strike": {"name": "Удар Угля", "type": "attack", "cost": 1, "rarity": "uncommon", "guardian": "flame", "desc": "6 урона. +3 ожога.", "effect": "ember_strike"},
+    "flame_wave": {"name": "Огненная Волна", "type": "skill", "cost": 1, "rarity": "uncommon", "guardian": "flame", "desc": "4 урона и 2 ожога всем врагам.", "effect": "flame_wave"},
+    "inferno_core": {"name": "Ядро Пламени", "type": "power", "cost": 1, "rarity": "rare", "guardian": "flame", "desc": "Первый ожог за ход +2.", "effect": "inferno_core"},
+    "scorch_mark": {"name": "Палящая Метка", "type": "attack", "cost": 1, "rarity": "rare", "guardian": "flame", "desc": "7 урона. +урон = ожогу на цели.", "effect": "scorch_mark"},
+    "wild_slash": {"name": "Дикий Размах", "type": "attack", "cost": 1, "rarity": "common", "desc": "Наносит 8 урона.", "effect": "wild_slash"},
+    "barrier_pulse": {"name": "Импульс Барьера", "type": "skill", "cost": 1, "rarity": "uncommon", "desc": "6 блока. Возьми 1.", "effect": "barrier_pulse"},
+    "rupture": {"name": "Разрыв", "type": "attack", "cost": 1, "rarity": "uncommon", "desc": "9 урона. +6 если цель уязвима.", "effect": "rupture"},
+    "molten_guard": {"name": "Расплавленный Щит", "type": "skill", "cost": 1, "rarity": "uncommon", "desc": "8 блока. +3 ожога цели.", "effect": "molten_guard"},
+    "chain_burst": {"name": "Цепная Вспышка", "type": "attack", "cost": 2, "rarity": "rare", "desc": "5 урона всем. Возьми 1.", "effect": "chain_burst"},
+    "last_stand": {"name": "Последний Рубеж", "type": "skill", "cost": 0, "rarity": "rare", "desc": "12 блока. −3 HP.", "effect": "last_stand"},
     "curse_wound": {"name": "Рана", "type": "curse", "cost": -1, "rarity": "curse", "unplayable": True, "desc": "Проклятие. Нельзя разыграть.", "effect": "curse_none"},
     "curse_doubt": {"name": "Сомнение", "type": "curse", "cost": 1, "rarity": "curse", "desc": "Сбрось 1 случайную карту.", "effect": "curse_doubt"},
     "curse_hex": {"name": "Сглаз", "type": "curse", "cost": 0, "rarity": "curse", "unplayable": True, "desc": "Проклятие. Занимает руку.", "effect": "curse_none"},
@@ -353,6 +371,96 @@ CARD_SCALING = {
         "desc": lambda s: f"Наносит {s('damage')} урона + столько же, сколько яда на цели.",
         "play": lambda s, ctx: ctx.deal_damage(s("damage") + ctx.enemy_status("poison")),
     },
+    "aegis_strike": {
+        "stats": {"damage": (6, 2), "block": (4, 2)},
+        "desc": lambda s: f"{s('damage')} урона. Даёт {s('block')} блока.",
+        "play": lambda s, ctx: (ctx.deal_damage(s("damage")), ctx.gain_block(s("block"))),
+    },
+    "bulwark": {
+        "stats": {"metallicize": (2, 1)},
+        "desc": lambda s: f"В начале хода +{s('metallicize')} блока.",
+        "play": lambda s, ctx: ctx.gain_power("metallicize", s("metallicize")),
+    },
+    "shield_bash": {
+        "stats": {"damage": (8, 2), "cap": (12, 3)},
+        "desc": lambda s: f"{s('damage')} урона + твой блок (до {s('cap')}).",
+        "play": lambda s, ctx: ctx.deal_damage(s("damage") + min(ctx.player_block(), s("cap"))),
+    },
+    "hold_the_line": {
+        "stats": {"block": (10, 3), "bonus": (4, 2)},
+        "desc": lambda s: f"{s('block')} блока. Если HP > 50% — ещё {s('bonus')}.",
+        "play": lambda s, ctx: ctx.gain_block(s("block") + (s("bonus") if ctx.player_hp_percent() > 0.5 else 0)),
+    },
+    "shadow_stab": {
+        "stats": {"damage": (5, 2), "poison": (3, 1)},
+        "desc": lambda s: f"{s('damage')} урона. +{s('poison')} яда.",
+        "play": lambda s, ctx: (ctx.deal_damage(s("damage")), ctx.apply_status("poison", s("poison"))),
+    },
+    "toxin_wave": {
+        "stats": {"block": (4, 2), "poison": (2, 1)},
+        "desc": lambda s: f"{s('block')} блока. {s('poison')} яда всем врагам.",
+        "play": lambda s, ctx: (ctx.gain_block(s("block")), ctx.poison_all_enemies(s("poison"))),
+    },
+    "night_veil": {
+        "stats": {"bonus": (2, 1)},
+        "desc": lambda s: f"Первый яд за ход +{s('bonus')}.",
+        "play": lambda s, ctx: ctx.gain_power("night_veil", s("bonus")),
+    },
+    "assassin_mark": {
+        "stats": {"damage": (7, 2)},
+        "desc": lambda s: f"{s('damage')} урона. +урон = яду на цели.",
+        "play": lambda s, ctx: ctx.deal_damage(s("damage") + ctx.enemy_status("poison")),
+    },
+    "ember_strike": {
+        "stats": {"damage": (6, 2), "burn": (3, 1)},
+        "desc": lambda s: f"{s('damage')} урона. +{s('burn')} ожога.",
+        "play": lambda s, ctx: (ctx.deal_damage(s("damage")), ctx.apply_status("burn", s("burn"))),
+    },
+    "flame_wave": {
+        "stats": {"damage": (4, 1), "burn": (2, 1)},
+        "desc": lambda s: f"{s('damage')} урона и {s('burn')} ожога всем врагам.",
+        "play": lambda s, ctx: ctx.burn_all_enemies(s("damage"), s("burn")),
+    },
+    "inferno_core": {
+        "stats": {"bonus": (2, 1)},
+        "desc": lambda s: f"Первый ожог за ход +{s('bonus')}.",
+        "play": lambda s, ctx: ctx.gain_power("inferno_core", s("bonus")),
+    },
+    "scorch_mark": {
+        "stats": {"damage": (7, 2)},
+        "desc": lambda s: f"{s('damage')} урона. +урон = ожогу на цели.",
+        "play": lambda s, ctx: ctx.deal_damage(s("damage") + ctx.enemy_status("burn")),
+    },
+    "wild_slash": {
+        "stats": {"damage": (8, 2)},
+        "desc": lambda s: f"Наносит {s('damage')} урона.",
+        "play": lambda s, ctx: ctx.deal_damage(s("damage")),
+    },
+    "barrier_pulse": {
+        "stats": {"block": (6, 2), "draw": (1, 0)},
+        "desc": lambda s: f"{s('block')} блока. Возьми {s('draw')}.",
+        "play": lambda s, ctx: (ctx.gain_block(s("block")), ctx.draw_cards(s("draw"))),
+    },
+    "rupture": {
+        "stats": {"damage": (9, 2), "bonus": (6, 2)},
+        "desc": lambda s: f"{s('damage')} урона. +{s('bonus')} если цель уязвима.",
+        "play": lambda s, ctx: ctx.deal_damage(s("damage") + (s("bonus") if ctx.enemy_has_status("vulnerable") else 0)),
+    },
+    "molten_guard": {
+        "stats": {"block": (8, 2), "burn": (3, 1)},
+        "desc": lambda s: f"{s('block')} блока. +{s('burn')} ожога цели.",
+        "play": lambda s, ctx: (ctx.gain_block(s("block")), ctx.apply_status("burn", s("burn"))),
+    },
+    "chain_burst": {
+        "stats": {"damage": (5, 1), "draw": (1, 0)},
+        "desc": lambda s: f"{s('damage')} урона всем. Возьми {s('draw')}.",
+        "play": lambda s, ctx: (ctx.deal_damage_all(s("damage")), ctx.draw_cards(s("draw"))),
+    },
+    "last_stand": {
+        "stats": {"block": (12, 3), "self_dmg": (3, 0)},
+        "desc": lambda s: f"{s('block')} блока. −{s('self_dmg')} HP.",
+        "play": lambda s, ctx: (ctx.gain_block(s("block")), ctx.self_damage(s("self_dmg"))),
+    },
 }
 
 
@@ -482,15 +590,19 @@ def create_card(card_id):
     return {"id": card_id, "uid": f"{card_id}_{uuid.uuid4().hex[:8]}", **base}
 
 
-def starter_deck():
-    deck = [create_card("strike") for _ in range(4)]
-    deck += [create_card("defend") for _ in range(5)]
-    deck.append(create_card("quick_slash"))
+def starter_deck(guardian_id="steel"):
+    from guardians import guardian_def
+    from config import shuffle
+
+    info = guardian_def(guardian_id)
+    deck = [create_card(cid) for cid in info["starter"]]
     return shuffle(deck)
 
 
-def roll_card_rewards(count=3, act=0, exclude_ids=None):
+def roll_card_rewards(count=3, act=0, exclude_ids=None, guardian_id=None):
     exclude_ids = set(exclude_ids or [])
+    from guardians import guardian_card_pool
+    exclusive = guardian_card_pool(guardian_id) if guardian_id else set()
     weights = (
         (0.7, 0.25, 0.05) if act == 0 else
         (0.5, 0.35, 0.15) if act == 1 else
@@ -509,6 +621,10 @@ def roll_card_rewards(count=3, act=0, exclude_ids=None):
         elif roll > weights[0]:
             rarity = "uncommon"
         pool = [cid for cid in REWARD_POOL[rarity] if cid not in used and cid not in exclude_ids]
+        if exclusive and random.random() < 0.38:
+            gpool = [cid for cid in exclusive if CARD_DEFS[cid]["rarity"] == rarity and cid not in used and cid not in exclude_ids]
+            if gpool:
+                pool = gpool
         if not pool:
             pool = [cid for cid in REWARD_POOL[rarity] if cid not in used]
         if not pool:

@@ -518,6 +518,13 @@ ENEMY_PAINTERS = {
     "blue_boss": _paint_blue_boss,
     "ice_guardian": _paint_ice_guardian,
     "border_hunter": lambda s, w, h: _paint_wolf(s, w, h, (200, 60, 80)),
+    "crimson_hunter": lambda s, w, h: _paint_wolf(s, w, h, (220, 50, 70)),
+    "void_heart": lambda s, w, h: _paint_wraith(s, w, h, (200, 60, 240)),
+    "sand_viper": lambda s, w, h: _paint_scorpion(s, w, h, (180, 140, 60)),
+    "frost_lynx": lambda s, w, h: _paint_wolf(s, w, h, (140, 190, 230)),
+    "briar_stalker": lambda s, w, h: _paint_wolf(s, w, h, (100, 150, 70)),
+    "void_maw": lambda s, w, h: _paint_wraith(s, w, h, (150, 70, 200)),
+    "abyss_watcher": lambda s, w, h: _paint_wraith(s, w, h, (120, 90, 180)),
 }
 
 
@@ -976,6 +983,24 @@ def _paint_event_desert(s, w, h):
     _radial_glow(s, cx, cy - 6, 20, (255, 210, 120), 30)
 
 
+def _paint_event_void(s, w, h):
+    _vgradient(s, (0, 0, w, h), (12, 8, 24), (48, 28, 72))
+    cx, cy = w // 2, h // 2
+    _radial_glow(s, cx, cy, 36, (160, 80, 220), 50)
+    pygame.draw.ellipse(s, (80, 40, 120), (cx - 28, cy - 12, 56, 24))
+    for i in range(5):
+        px = cx - 20 + i * 10
+        pygame.draw.circle(s, (200, 140, 255), (px, cy - 20 + (i % 2) * 6), 3)
+
+
+def _paint_event_hunter(s, w, h):
+    _vgradient(s, (0, 0, w, h), (20, 12, 18), (48, 24, 32))
+    cx, cy = w // 2, h // 2 + 8
+    pygame.draw.polygon(s, (200, 50, 70), [(cx, cy - 30), (cx - 22, cy + 18), (cx + 22, cy + 18)])
+    pygame.draw.rect(s, (140, 30, 50), (cx - 8, cy - 10, 16, 24), border_radius=3)
+    _radial_glow(s, cx, cy, 24, (220, 60, 80), 35)
+
+
 EVENT_SCENES = {
     "campfire": _paint_event_campfire,
     "ruins": _paint_event_ruins,
@@ -984,8 +1009,23 @@ EVENT_SCENES = {
     "whispering_thicket": _paint_event_forest,
     "snow_echo": _paint_event_snow,
     "sand_tomb": _paint_event_desert,
-    "void_altar": _paint_event_ruins,
+    "void_altar": _paint_event_void,
+    "void_whisper": _paint_event_void,
+    "void_shrine": _paint_event_void,
     "alchemist": _paint_event_smith,
+    "hunter_ambush": _paint_event_hunter,
+    "hunter_contract": _paint_event_hunter,
+    "shrine_of_fate": _paint_event_void,
+    "molten_spring": _paint_event_desert,
+    "ambush": _paint_event_fog,
+    "dark_pact": _paint_event_ruins,
+    "cursed_shrine": _paint_event_ruins,
+    "healing_spring": _paint_event_forest,
+    "shadow_deal": _paint_event_ruins,
+    "ancient_tree": _paint_event_forest,
+    "mirage": _paint_event_desert,
+    "frozen_shrine": _paint_event_snow,
+    "wandering_healer": _paint_event_campfire,
 }
 
 

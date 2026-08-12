@@ -33,6 +33,10 @@ def draw_node_icon(surf, cx, cy, size, node_type, tint=(255, 255, 255)):
         _circle(surf, tint, cx, cy, int(s * 0.3), 2)
         _circle(surf, tint, cx - s * 0.12, cy - s * 0.05, 5)
         _circle(surf, tint, cx + s * 0.12, cy - s * 0.05, 5)
+    elif node_type == "treasure":
+        pygame.draw.rect(surf, tint, (cx - s * 0.22, cy - s * 0.08, s * 0.44, s * 0.28), border_radius=3)
+        pygame.draw.rect(surf, (200, 160, 40), (cx - s * 0.18, cy - s * 0.18, s * 0.36, s * 0.12), border_radius=2)
+        _circle(surf, (255, 220, 80), cx, cy + s * 0.02, 4)
 
 
 def draw_card_type_icon(surf, x, y, size, card_type):

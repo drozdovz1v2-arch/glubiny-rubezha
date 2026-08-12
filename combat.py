@@ -3,6 +3,7 @@ from config import COLORS, rand_int, shuffle
 from difficulty import get_difficulty
 from mutators import pressure_turn, run_modifiers
 from relics import apply_combat_start, apply_enemy_thorns, check_iron_heart, check_wraith_cloak, relic_bonus_block, relic_bonus_damage, relic_bonus_poison, relic_on_attack_hit, relic_on_block_stolen, relic_on_curse_played, relic_on_enemy_debuff, relic_on_poison_applied
+from blessings import apply_blessing_combat_start, blessing_burn_bonus, blessing_first_hit_reduction
 from enemies import (
     add_status,
     advance_pattern,
@@ -11,7 +12,8 @@ from enemies import (
     decay_statuses,
     get_intent,
     scaled_damage,
-    tick_statuses,
+    tick_poison,
+    tick_burn,
 )
 
 ENEMY_ACTION_DELAY = 55
@@ -40,6 +42,15 @@ class CombatContext:
             card = self.combat.current_card
             if card and card.get("type") == "attack":
                 relic_on_attack_hit(self.combat.relics, self.combat, enemy)
+            affix = enemy.get("affix")
+            if affix:
+                from enemies import AFFIX_DEFS
+                thorns = AFFIX_DEFS.get(affix, {}).get("thorns", 0)
+                if thorns:
+                    lost = self.combat.lose_player_hp(thorns)
+                    if lost:
+                        self.combat.spawn_fx("damage", lost, "player")
+                        self.combat.log(f"Шипы элиты: {lost} урона")
         elif block_used > 0:
             self.combat.spawn_fx("blocked", block_used, enemy)
             self.combat.log(f"Заблокировано {block_used} -> {enemy['name']}")
@@ -68,12 +79,53 @@ class CombatContext:
         enemy = self.combat.target_enemy()
         if enemy:
             if key == "poison":
-                amount = relic_bonus_poison(self.combat.relics, amount)
+                amount = relic_bonus_poison(self.combat.relics, amount, self.combat)
+            elif key == "burn":
+                amount = blessing_burn_bonus(self.combat.run, amount)
+                if "ember_charm" in self.combat.relics:
+                    amount += 1
+                if self.combat.player.get("powers", {}).get("inferno_core") and not self.combat.inferno_core_used:
+                    amount += self.combat.player["powers"]["inferno_core"]
+                    self.combat.inferno_core_used = True
             add_status(enemy, key, amount)
             if key == "poison":
                 relic_on_poison_applied(self.combat.relics, self.combat)
-            if key in ("weak", "vulnerable", "poison"):
+            if key in ("weak", "vulnerable", "poison", "burn"):
                 relic_on_enemy_debuff(self.combat.relics, self.combat, key)
+
+    def burn_all_enemies(self, damage, burn):
+        burn = blessing_burn_bonus(self.combat.run, burn)
+        if "ember_charm" in self.combat.relics:
+            burn += 1
+        from enemies import apply_block_damage, check_boss_enrage
+        for enemy in self.combat.living_enemies():
+            hp_lost = apply_block_damage(enemy, damage)
+            if hp_lost:
+                self.combat.spawn_fx("damage", hp_lost, enemy)
+                check_boss_enrage(self.combat, enemy)
+            if burn > 0:
+                add_status(enemy, "burn", burn)
+        if burn > 0:
+            self.combat.log(f"+{burn} ожога всем врагам")
+
+    def deal_damage_all(self, amount):
+        from enemies import apply_block_damage, check_boss_enrage
+        card = self.combat.current_card
+        amount = relic_bonus_damage(self.combat.relics, card, amount, self.combat)
+        for enemy in self.combat.living_enemies():
+            hp_lost = apply_block_damage(enemy, amount)
+            if hp_lost:
+                self.combat.spawn_fx("damage", hp_lost, enemy)
+                check_boss_enrage(self.combat, enemy)
+                relic_on_attack_hit(self.combat.relics, self.combat, hp_lost)
+
+    def poison_all_enemies(self, amount):
+        amount = relic_bonus_poison(self.combat.relics, amount, self.combat)
+        for enemy in self.combat.living_enemies():
+            add_status(enemy, "poison", amount)
+        if amount > 0:
+            relic_on_poison_applied(self.combat.relics, self.combat)
+            self.combat.log(f"+{amount} яда всем врагам")
 
     def apply_player_status(self, key, amount):
         add_status(self.combat.player, key, amount)
@@ -187,6 +239,7 @@ class CombatState:
         from potions import normalize_potions
         self.potions = normalize_potions(run.get("potions", []))
         self.run_mutators = run_modifiers(run)
+        self.run = run
         self.run_act = run.get("act", 0)
         self.potion_used_this_turn = False
         self.current_card = None
@@ -194,10 +247,14 @@ class CombatState:
         self.storm_used_this_turn = False
         self.bark_used_this_turn = False
         self.mark_used_this_turn = False
+        self.night_veil_used = False
         self.iron_heart_used = False
         self.wraith_cloak_used = False
         self.runic_flask_used = False
         self.debuff_scroll_used_this_turn = False
+        self.inferno_core_used = False
+        self.blessing_ward_used = False
+        self.shadow_veil_used = False
         self.won = False
         self.lost = False
         self.finished = False
@@ -210,12 +267,19 @@ class CombatState:
         self.player["block"] = 0
         self._enemy_block_pools = {}
         self.player["energy"] = self.player["max_energy"]
-        poison_dmg = tick_statuses(self.player)
+        poison_dmg = tick_poison(self.player)
+        burn_dmg = tick_burn(self.player)
         if poison_dmg:
             self.spawn_fx("poison", poison_dmg, "player")
             self.log(f"Яд: {poison_dmg} урона")
             check_iron_heart(self, poison_dmg)
             check_wraith_cloak(self, poison_dmg)
+        if burn_dmg:
+            self.spawn_fx("damage", burn_dmg, "player")
+            self.log(f"Ожог: {burn_dmg} урона")
+            check_iron_heart(self, burn_dmg)
+            check_wraith_cloak(self, burn_dmg)
+        if poison_dmg or burn_dmg:
             self.check_end()
             if self.lost:
                 return
@@ -247,9 +311,12 @@ class CombatState:
         self.storm_used_this_turn = False
         self.bark_used_this_turn = False
         self.mark_used_this_turn = False
+        self.night_veil_used = False
+        self.inferno_core_used = False
+        self.shadow_veil_used = False
         self.potion_used_this_turn = False
         self.debuff_scroll_used_this_turn = False
-        if self.turn >= pressure_turn(self.run_mutators, get_difficulty().get("pressure_turn", 5), self.run_act):
+        if self.turn >= max(2, pressure_turn(self.run_mutators, get_difficulty().get("pressure_turn", 5), self.run_act) - (1 if self.run.get("ascension", 0) >= 2 else 0)):
             living = self.living_enemies()
             if living:
                 for e in living:
@@ -258,6 +325,7 @@ class CombatState:
                 self.action_banner = "Рубеж давит!"
         if self.turn == 1:
             apply_combat_start(self)
+            apply_blessing_combat_start(self)
 
     def draw_cards(self, n):
         for _ in range(n):
@@ -417,6 +485,7 @@ class CombatState:
     def lose_player_hp(self, amount):
         if amount <= 0:
             return 0
+        amount = blessing_first_hit_reduction(self, amount)
         before = self.player["hp"]
         self.player["hp"] = max(0, before - amount)
         lost = before - self.player["hp"]
@@ -508,10 +577,24 @@ class CombatState:
             return
 
         if self.enemy_subphase == "act":
-            poison_dmg = tick_statuses(enemy)
+            from enemies import AFFIX_DEFS
+            affix = enemy.get("affix")
+            if affix == "regenerating":
+                regen = AFFIX_DEFS["regenerating"]["regen"]
+                before = enemy["hp"]
+                enemy["hp"] = min(enemy["max_hp"], enemy["hp"] + regen)
+                if enemy["hp"] > before:
+                    self.spawn_fx("heal", enemy["hp"] - before, enemy)
+                    self.log(f"{enemy['name']}: +{enemy['hp'] - before} HP")
+            poison_dmg = tick_poison(enemy)
+            burn_dmg = tick_burn(enemy)
             if poison_dmg:
                 self.spawn_fx("poison", poison_dmg, enemy)
                 self.log(f"{enemy['name']}: {poison_dmg} урона от яда")
+                check_boss_enrage(self, enemy)
+            if burn_dmg:
+                self.spawn_fx("damage", burn_dmg, enemy)
+                self.log(f"{enemy['name']}: {burn_dmg} урона от ожога")
                 check_boss_enrage(self, enemy)
             self.execute_intent(enemy, enemy["intent"])
             advance_pattern(enemy)
@@ -549,6 +632,11 @@ class CombatState:
             check_iron_heart(self, hp_lost)
             check_wraith_cloak(self, hp_lost)
             apply_enemy_thorns(self, enemy, hp_lost)
+            if hp_lost > 0 and enemy.get("affix") == "vampiric":
+                from enemies import AFFIX_DEFS
+                heal = AFFIX_DEFS["vampiric"]["heal_on_attack"]
+                enemy["hp"] = min(enemy["max_hp"], enemy["hp"] + heal)
+                self.spawn_fx("heal", heal, enemy)
             self.log(f"{enemy['name']} атакует: {hp_lost or 'блок'}")
         elif kind == "multi":
             total = 0
@@ -565,6 +653,11 @@ class CombatState:
             check_iron_heart(self, total)
             check_wraith_cloak(self, total)
             apply_enemy_thorns(self, enemy, total)
+            if total > 0 and enemy.get("affix") == "vampiric":
+                from enemies import AFFIX_DEFS
+                heal = AFFIX_DEFS["vampiric"]["heal_on_attack"]
+                enemy["hp"] = min(enemy["max_hp"], enemy["hp"] + heal)
+                self.spawn_fx("heal", heal, enemy)
             self.log(f"{enemy['name']}: {intent['value']}x{intent['hits']}")
         elif kind == "block":
             enemy["block"] += intent["value"]

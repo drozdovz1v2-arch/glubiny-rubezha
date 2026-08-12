@@ -7,9 +7,9 @@ import pygame
 from audio import Audio
 import config
 from config import COLORS, FPS, GAME_TITLE, NODE_COLORS, NODE_TYPES, clamp, daily_seed, get_display_preset, has_run_save, save_meta
-from difficulty import get_difficulty, node_threat_label, pressure_tier
+from difficulty import difficulty_desc, get_difficulty, node_threat_label, pressure_tier
 from enemies import intent_color, intent_label, get_next_intent
-from game_state import ACHIEVEMENTS, ACT_TRANSITION, CODEX, COMBAT, DEFEAT, EVENT, HELP, MAP, MENU, RELIC_REWARD, REST, REST_BREW_COST, REST_REMOVE, REST_UPGRADE, REWARD, SETTINGS, SHOP, VICTORY, Game
+from game_state import ACHIEVEMENTS, ACT_TRANSITION, BLESSING_PICK, CODEX, COMBAT, DEFEAT, EVENT, HELP, MAP, MENU, RELIC_REWARD, REST, REST_BREW_COST, REST_REMOVE, REST_UPGRADE, REWARD, SETTINGS, SHOP, STATS, VICTORY, Game
 from cards import preview_upgrade, sync_discovered_cards, shop_removal_price
 from relics import RELIC_DEFS, draw_relic_icon
 from icons import draw_card_type_icon, draw_intent_icon, draw_node_icon, draw_potion_icon, ENEMY_BLOCK_DESC
@@ -37,6 +37,8 @@ from ui_theme import (
     draw_card_tooltip,
     draw_codex_tabs,
     draw_relic_codex,
+    draw_help_screen,
+    codex_back_button_rect,
     draw_relic_strip,
     draw_relic_tooltip,
     draw_map_node_tooltip,
@@ -56,6 +58,7 @@ from ui_theme import (
     draw_potion_codex,
     draw_section_panel,
     draw_top_bar,
+    wrap_text_lines,
     draw_upgrade_preview,
     layout_card_grid,
     position_upgrade_preview,
@@ -90,6 +93,7 @@ class App:
         self.buttons = ButtonRegistry()
         self.mouse = (0, 0)
         self.highlight_rects = {}
+        self.highlight_rect_lists = {}
         self.anim = 0.0
         meta = self.game.meta
         self.audio = Audio(meta.get("music_volume", 0.7), meta.get("sfx_volume", 0.85))
@@ -103,6 +107,10 @@ class App:
         self.boss_intro = None
         self.hovered_card = None
         self.codex_tab = "relics"
+        self.codex_scroll_y = 0
+        self.codex_scroll_rect = None
+        self.help_scroll_y = 0
+        self.help_scroll_rect = None
         self.toasts = []
         self.combat_log_offset = 0
         self.combat_log_rect = None
@@ -131,6 +139,161 @@ class App:
         "act_transition": "Новый акт",
     }
 
+    def modal_blocking(self):
+        return self.confirm_to_menu or self.confirm_new_run or bool(self.card_overlay)
+
+    def tutorial_screen_name(self):
+        screen_map = {
+            MENU: "menu", MAP: "map", COMBAT: "combat", REWARD: "reward",
+            RELIC_REWARD: "relic_reward", REST: "rest", SHOP: "shop",
+        }
+        return screen_map.get(self.game.screen, self.game.screen)
+
+    def tutorial_active(self):
+        return self.game.tutorial.should_show(self.tutorial_screen_name())
+
+    def tutorial_panel_rect(self):
+        w = config.sx(580)
+        h = config.sy(168)
+        return pygame.Rect((config.SCREEN_WIDTH - w) // 2, config.SCREEN_HEIGHT - h - config.sy(20), w, h)
+
+    def tutorial_safe_zone(self):
+        panel = self.tutorial_panel_rect()
+        return pygame.Rect(0, 0, config.SCREEN_WIDTH, max(config.sy(8), panel.top - config.sy(10)))
+
+    def tutorial_rect_visible(self, rect):
+        safe = self.tutorial_safe_zone()
+        visible = rect.clip(safe)
+        return visible if visible.width > 0 and visible.height > 0 else None
+
+    def tutorial_highlight_targets(self, step):
+        panel = self.tutorial_panel_rect()
+        self.highlight_rects["tutorial_panel"] = panel
+        hl = step.get("highlight")
+        if not hl:
+            return []
+        keys = hl if isinstance(hl, list) else [hl]
+        label_cfg = step.get("highlight_label")
+        targets = []
+        for key in keys:
+            rects = self.highlight_rect_lists.get(key)
+            if rects is None:
+                rect = self.highlight_rects.get(key)
+                rects = [rect] if rect else []
+            for i, rect in enumerate(rects):
+                if not rect:
+                    continue
+                visible = self.tutorial_rect_visible(rect)
+                if not visible:
+                    continue
+                if isinstance(label_cfg, dict):
+                    label = label_cfg.get(key, "Сюда")
+                else:
+                    label = label_cfg or "Нажми сюда"
+                if key == "map_available_nodes" and i > 0:
+                    label = ""
+                kind = "node" if key in ("map_available_nodes",) else "rect"
+                targets.append((visible, label, kind))
+        return targets
+
+    def tutorial_skip_rect(self, panel=None):
+        panel = panel or self.tutorial_panel_rect()
+        pad = config.sx(16)
+        w = config.sx(96)
+        h = config.sy(28)
+        return pygame.Rect(panel.right - pad - w, panel.bottom - pad - h, w, h)
+
+    def draw_tutorial_node_marker(self, rect, label):
+        cx, cy = rect.center
+        pulse = config.sy(8) + int(math.sin(self.anim * 3.5) * config.sy(4))
+        radius = max(rect.width, rect.height) // 2 + pulse
+        glow = pygame.Surface((radius * 2 + 8, radius * 2 + 8), pygame.SRCALPHA)
+        alpha = int(150 + math.sin(self.anim * 4) * 70)
+        center = (radius + 4, radius + 4)
+        pygame.draw.circle(glow, (*COLORS["accent"], alpha), center, radius, config.sy(3))
+        pygame.draw.circle(glow, (255, 255, 255, min(255, alpha + 40)), center, radius, 1)
+        self.screen.blit(glow, (cx - radius - 4, cy - radius - 4))
+
+        if label:
+            lbl = self.fonts["sm"].render(label, True, (10, 18, 24))
+            pad_x = config.sx(10)
+            pad_y = config.sy(4)
+            badge = pygame.Rect(0, 0, lbl.get_width() + pad_x * 2, lbl.get_height() + pad_y * 2)
+            badge.midbottom = (cx, cy - radius - config.sy(10))
+            badge.x = max(config.sx(8), min(badge.x, config.SCREEN_WIDTH - badge.width - config.sx(8)))
+            badge.y = max(config.sy(8), badge.y)
+            draw_panel(self.screen, badge, fill=COLORS["accent"], border=(255, 255, 255), radius=8, alpha=245, shadow=True)
+            self.screen.blit(lbl, (badge.x + pad_x, badge.y + pad_y))
+
+        panel = self.tutorial_panel_rect()
+        if label and cy < panel.top - config.sy(16):
+            self.draw_tutorial_pointer(panel.centerx, panel.top - config.sy(4), cx, cy + radius + config.sy(4))
+
+    def draw_tutorial_target_marker(self, rect, label, kind="rect"):
+        if kind == "node":
+            self.draw_tutorial_node_marker(rect, label)
+            return
+        pulse = config.sy(6) + int(math.sin(self.anim * 3.5) * config.sy(3))
+        frame = rect.inflate(pulse * 2, pulse * 2)
+        glow = pygame.Surface(frame.size, pygame.SRCALPHA)
+        alpha = int(150 + math.sin(self.anim * 4) * 70)
+        pygame.draw.rect(glow, (*COLORS["accent"], alpha), glow.get_rect(), config.sy(3), border_radius=12)
+        pygame.draw.rect(glow, (255, 255, 255, min(255, alpha + 40)), glow.get_rect(), 1, border_radius=12)
+        self.screen.blit(glow, frame.topleft)
+
+        lbl = self.fonts["sm"].render(label, True, (10, 18, 24))
+        pad_x = config.sx(10)
+        pad_y = config.sy(4)
+        badge_w = lbl.get_width() + pad_x * 2
+        badge_h = lbl.get_height() + pad_y * 2
+        badge_x = max(config.sx(8), min(rect.centerx - badge_w // 2, config.SCREEN_WIDTH - badge_w - config.sx(8)))
+        badge_y = max(config.sy(8), rect.top - badge_h - config.sy(8))
+        badge = pygame.Rect(badge_x, badge_y, badge_w, badge_h)
+        draw_panel(self.screen, badge, fill=COLORS["accent"], border=(255, 255, 255), radius=8, alpha=245, shadow=True)
+        self.screen.blit(lbl, (badge.x + pad_x, badge.y + pad_y))
+
+        panel = self.tutorial_panel_rect()
+        if rect.bottom < panel.top - config.sy(16):
+            self.draw_tutorial_pointer(panel.centerx, panel.top - config.sy(4), rect.centerx, rect.bottom + pulse)
+
+    def draw_tutorial_pointer(self, x1, y1, x2, y2):
+        color = COLORS["accent"]
+        pygame.draw.line(self.screen, color, (x1, y1), (x2, y2), 2)
+        angle = math.atan2(y2 - y1, x2 - x1)
+        size = config.sy(10)
+        tip = (x2, y2)
+        left = (
+            x2 - size * math.cos(angle - 0.45),
+            y2 - size * math.sin(angle - 0.45),
+        )
+        right = (
+            x2 - size * math.cos(angle + 0.45),
+            y2 - size * math.sin(angle + 0.45),
+        )
+        pygame.draw.polygon(self.screen, color, [tip, left, right])
+
+    def try_advance_tutorial_click(self, gpos):
+        if not self.tutorial_active():
+            return False
+        tut = self.game.tutorial
+        step = tut.step
+        if not step:
+            return False
+        panel = self.tutorial_panel_rect()
+        skip_rect = self.tutorial_skip_rect(panel)
+        if skip_rect.collidepoint(gpos):
+            tut.skip()
+            self.audio.play("ui")
+            return True
+        advance = step.get("advance")
+        if advance in ("any", "click") and panel.collidepoint(gpos) and not skip_rect.collidepoint(gpos):
+            tut.advance("click")
+            self.audio.play("ui")
+            return True
+        if panel.collidepoint(gpos):
+            return True
+        return False
+
     def run(self):
         while True:
             dt = self.clock.tick(FPS) / 16.0
@@ -144,17 +307,21 @@ class App:
                 gpos = self.window_to_game(event.pos) if hasattr(event, "pos") else self.mouse
                 if event.type == pygame.MOUSEMOTION:
                     self.mouse = gpos
-                    if self.map_press and self.game.screen == MAP:
+                    if self.map_press and self.game.screen == MAP and not self.modal_blocking():
                         self.update_map_pan(gpos)
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if self.game.screen == MAP and self.map_clip_rect().collidepoint(gpos):
+                    if self.try_advance_tutorial_click(gpos):
+                        pass
+                    elif self.modal_blocking():
+                        self.buttons.hit(gpos)
+                    elif self.game.screen == MAP and self.map_clip_rect().collidepoint(gpos):
                         self.begin_map_press(gpos)
                     elif self.game.screen == SETTINGS:
                         self.handle_settings_click(gpos)
                     else:
                         self.buttons.hit(gpos)
                 if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                    if self.map_press:
+                    if self.map_press and not self.modal_blocking() and not self.tutorial_active():
                         self.end_map_press()
                     if self.settings_drag:
                         self.save_settings()
@@ -166,6 +333,14 @@ class App:
                         c = self.game.combat
                         max_off = max(0, len(c.log_lines) - 8)
                         self.combat_log_offset = max(0, min(self.combat_log_offset - event.y, max_off))
+                if event.type == pygame.MOUSEWHEEL and self.game.screen == CODEX:
+                    if self.codex_scroll_rect and self.codex_scroll_rect.collidepoint(self.mouse):
+                        step = config.sy(48)
+                        self.codex_scroll_y = max(0, self.codex_scroll_y - event.y * step)
+                if event.type == pygame.MOUSEWHEEL and self.game.screen == HELP:
+                    if self.help_scroll_rect and self.help_scroll_rect.collidepoint(self.mouse):
+                        step = config.sy(48)
+                        self.help_scroll_y = max(0, self.help_scroll_y - event.y * step)
                 if event.type == pygame.KEYDOWN:
                     self.handle_key(event.key)
 
@@ -303,7 +478,7 @@ class App:
                 self.confirm_new_run = False
                 return
             screen = self.game.screen
-            if screen in (CODEX, ACHIEVEMENTS, HELP, SETTINGS):
+            if screen in (CODEX, ACHIEVEMENTS, HELP, SETTINGS, STATS, BLESSING_PICK):
                 self.game.screen = MENU
                 return
             if screen in (REST_UPGRADE, REST_REMOVE):
@@ -352,6 +527,12 @@ class App:
                 idx = key - pygame.K_1
                 if idx < len(self.game.relic_choices):
                     self.pick_relic_reward(idx)
+        elif screen == BLESSING_PICK:
+            if pygame.K_1 <= key <= pygame.K_3:
+                idx = key - pygame.K_1
+                if idx < len(self.game.blessing_choices):
+                    self.audio.play("power")
+                    self.game.pick_blessing(idx)
         elif screen == SHOP:
             if key in (pygame.K_q,):
                 self.leave_shop()
@@ -481,21 +662,42 @@ class App:
         else:
             self.do_new_run()
 
+    def map_label_gutter(self):
+        return config.sx(76)
+
     def map_content_rect(self):
         margin = config.sx(8)
         top = config.sy(78)
-        bottom = config.SCREEN_HEIGHT - config.sy(24)
+        bottom = config.SCREEN_HEIGHT - config.sy(10)
         return pygame.Rect(margin, top, config.SCREEN_WIDTH - margin * 2, max(config.sy(420), bottom - top))
 
     def map_legend_rect(self):
         content = self.map_content_rect()
-        h = config.sy(38)
-        return pygame.Rect(content.x + config.sx(14), content.bottom - h - config.sy(8), content.width - config.sx(28), h)
+        h = config.sy(36)
+        if self.tutorial_active() and self.game.screen == MAP:
+            y = self.tutorial_panel_rect().top - h - config.sy(10)
+        else:
+            y = content.bottom - h - config.sy(10)
+        return pygame.Rect(content.x + config.sx(14), y, content.width - config.sx(28), h)
+
+    def map_label_strip_rect(self):
+        clip = self.map_clip_rect()
+        gutter = self.map_label_gutter()
+        return pygame.Rect(clip.x - gutter, clip.y, gutter, clip.height)
 
     def map_clip_rect(self):
         legend = self.map_legend_rect()
         inner = self.map_content_rect().inflate(-config.sx(6), -config.sy(28))
-        return pygame.Rect(inner.x, inner.y, inner.w, max(config.sy(200), legend.top - inner.y - config.sy(6)))
+        gutter = self.map_label_gutter()
+        clip_h = max(config.sy(200), legend.top - inner.y - config.sy(8))
+        if self.tutorial_active() and self.game.screen == MAP:
+            tut_top = self.tutorial_panel_rect().top - config.sy(12)
+            clip_h = min(clip_h, max(config.sy(160), tut_top - inner.y))
+        return pygame.Rect(
+            inner.x + gutter, inner.y,
+            max(config.sx(240), inner.w - gutter),
+            clip_h,
+        )
 
     def map_node_hit_radius(self):
         return config.sy(42)
@@ -597,6 +799,11 @@ class App:
         if any(n["available"] and not n["visited"] for n in focus):
             target_y -= config.sy(36)
         clip = self.map_clip_rect()
+        if self.tutorial_active() and self.game.screen == MAP:
+            safe_cy = clip.top + int(clip.height * 0.42)
+            self.map_scroll_x = int(clamp(clip.centerx - target_x, x_lo, x_hi))
+            self.map_scroll_y = int(clamp(safe_cy - target_y, y_lo, y_hi))
+            return
         self.map_scroll_x = int(clamp(clip.centerx - target_x, x_lo, x_hi))
         self.map_scroll_y = int(clamp(clip.centery - target_y, y_lo, y_hi))
 
@@ -686,6 +893,7 @@ class App:
     def draw(self):
         self.buttons.clear()
         self.highlight_rects = {}
+        self.highlight_rect_lists = {}
         self.hovered_card = None
         self.hovered_card_energy = None
         accent = self.accent_for_screen()
@@ -702,6 +910,10 @@ class App:
             self.draw_codex()
         elif screen == ACHIEVEMENTS:
             self.draw_achievements()
+        elif screen == STATS:
+            self.draw_stats()
+        elif screen == BLESSING_PICK:
+            self.draw_blessing_pick()
         elif screen == MAP:
             self.draw_map_screen(accent)
         elif screen == COMBAT:
@@ -729,6 +941,7 @@ class App:
 
         self.draw_footer_hint()
         if self.card_overlay:
+            self.buttons.clear()
             self.draw_card_overlay(accent)
         if self.confirm_to_menu:
             self.buttons.clear()
@@ -767,7 +980,7 @@ class App:
     def draw_footer_hint(self):
         hints = {
             MENU: "Enter — продолжить или новый забег  ·  Esc — выход",
-            MAP: "Клик по подсвеченному узлу — идти  ·  перетаскивание — прокрутка  ·  Esc — в меню  ·  оранж./голуб. — привал/лавка",
+            MAP: "",
             COMBAT: "1–9 — карта  ·  Z/X/C — зелья  ·  Tab/клик — цель  ·  Esc — в меню" if not (self.game.combat and not self.game.combat.is_player_turn) else (self.game.combat.action_banner or "Ход врага...  ·  Esc — в меню"),
             REWARD: "1–3 — выбрать карту  ·  S — пропустить  ·  Esc — в меню",
             RELIC_REWARD: "1–3 — взять реликвию  ·  S — отказаться  ·  Esc — в меню",
@@ -777,12 +990,14 @@ class App:
             SHOP: "1–6 — купить  ·  H — лечение  ·  R — удалить  ·  Q/Esc — уйти",
             EVENT: "1–3 — выбор  ·  наведи для подсказки  ·  Esc — в меню",
             ACT_TRANSITION: "Enter — вперёд  ·  прочитай историю Рубежа  ·  Esc — в меню",
-            HELP: "Esc — назад в меню",
+            HELP: "",
             SETTINGS: "Esc — назад в меню",
             VICTORY: "Enter — новый забег  ·  M — меню",
             DEFEAT: "Enter — новый забег  ·  M — меню",
-            CODEX: "1/2/3 — вкладки  ·  Esc — назад",
+            CODEX: "",
             ACHIEVEMENTS: "Esc — назад в меню",
+            STATS: "Esc — назад в меню",
+            BLESSING_PICK: "1–3 — выбрать благословение  ·  Esc — в меню",
         }
         if self.card_overlay:
             text = "←/→ — страницы  ·  Esc — закрыть"
@@ -837,38 +1052,77 @@ class App:
 
     def draw_tutorial_overlay(self):
         tut = self.game.tutorial
-        screen_map = {MENU: "menu", MAP: "map", COMBAT: "combat", REWARD: "reward", RELIC_REWARD: "relic_reward", REST: "rest", SHOP: "shop"}
-        if not tut.should_show(screen_map.get(self.game.screen, self.game.screen)):
+        if not self.tutorial_active():
             return
         step = tut.step
         if not step:
             return
 
-        dim = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT), pygame.SRCALPHA)
-        dim.fill((0, 0, 0, 150))
-        hl = step.get("highlight")
-        if hl and hl in self.highlight_rects:
-            r = self.highlight_rects[hl]
-            pygame.draw.rect(dim, (0, 0, 0, 0), r.inflate(12, 12))
-            draw_panel(self.screen, r.inflate(12, 12), fill=(0, 0, 0, 0), border=COLORS["accent"], radius=10, alpha=0, shadow=False)
-        self.screen.blit(dim, (0, 0))
+        targets = self.tutorial_highlight_targets(step)
+        panel = self.tutorial_panel_rect()
+        panel_targets = []
+        screen_targets = []
+        for rect, label, kind in targets:
+            if rect.colliderect(panel):
+                panel_targets.append((rect, label, kind))
+            else:
+                screen_targets.append((rect, label, kind))
 
-        panel = pygame.Rect(config.SCREEN_WIDTH // 2 - 280, config.SCREEN_HEIGHT - 180, 560, 150)
+        dim = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 165))
+        panel_mask = panel.inflate(config.sx(6), config.sy(6))
+        pygame.draw.rect(dim, (0, 0, 0, 0), panel_mask)
+        for rect, _, kind in screen_targets:
+            if kind == "node":
+                hole = rect.inflate(config.sx(28), config.sy(28))
+                pygame.draw.ellipse(dim, (0, 0, 0, 0), hole)
+            else:
+                hole = rect.inflate(config.sx(14), config.sy(14))
+                pygame.draw.rect(dim, (0, 0, 0, 0), hole)
+        self.screen.blit(dim, (0, 0))
+        for rect, label, kind in screen_targets:
+            self.draw_tutorial_target_marker(rect, label, kind)
+
+        pad = config.sx(18)
+        footer_h = config.sy(40)
         draw_panel(self.screen, panel, fill=(14, 18, 28), border=COLORS["accent"], radius=16, alpha=240)
-        self.screen.blit(self.fonts["title_sm"].render(step["title"], True, COLORS["accent"]), (panel.x + 20, panel.y + 14))
-        wrap_text(self.screen, self.fonts["md"], step["text"], panel.x + 20, panel.y + 46, panel.width - 40, COLORS["text"])
+        title_y = panel.y + config.sy(12)
+        self.screen.blit(self.fonts["title_sm"].render(step["title"], True, COLORS["accent"]), (panel.x + pad, title_y))
+        body_y = title_y + config.sy(30)
+        line_h = config.sy(20)
+        body_lines = wrap_text_lines(self.fonts["md"], step["text"], panel.width - pad * 2)
+        max_lines = max(1, (panel.height - (body_y - panel.y) - footer_h - config.sy(6)) // line_h)
+        for i, line in enumerate(body_lines[:max_lines]):
+            self.screen.blit(self.fonts["md"].render(line, True, COLORS["text"]), (panel.x + pad, body_y + i * line_h))
+        footer_y = panel.bottom - footer_h
+        pygame.draw.line(self.screen, COLORS["panel_border"], (panel.x + pad, footer_y), (panel.right - pad, footer_y), 1)
         step_num = self.fonts["sm"].render(f"Обучение {tut.step_index + 1}/{len(TUTORIAL_STEPS)}", True, COLORS["text_dim"])
-        self.screen.blit(step_num, (panel.x + 20, panel.bottom - 30))
-        if step["advance"] in ("any", "click"):
-            draw_button(self.screen, self.fonts, pygame.Rect(panel.right - 220, panel.bottom - 42, 90, 34), "Далее", self.mouse, self.buttons, lambda: tut.advance("click"))
-        draw_button(self.screen, self.fonts, pygame.Rect(panel.right - 120, panel.bottom - 42, 100, 34), "Пропустить", self.mouse, self.buttons, tut.skip, primary=False)
+        self.screen.blit(step_num, (panel.x + pad, footer_y + config.sy(10)))
+        advance = step.get("advance")
+        hint_text = "ЛКМ по панели — дальше" if advance in ("any", "click") else "Выполни действие из подсказки"
+        hint = self.fonts["sm"].render(hint_text, True, COLORS["text_dim"])
+        hint_x = panel.x + pad + step_num.get_width() + config.sx(16)
+        if hint_x + hint.get_width() < panel.right - pad - config.sx(100):
+            self.screen.blit(hint, (hint_x, footer_y + config.sy(10)))
+        skip_rect = self.tutorial_skip_rect(panel)
+        hovered = skip_rect.collidepoint(self.mouse)
+        draw_panel(
+            self.screen, skip_rect, fill=(34, 42, 58) if not hovered else (52, 62, 82),
+            border=COLORS["panel_border"], radius=8, alpha=240, shadow=False,
+        )
+        skip_txt = self.fonts["sm"].render("Пропустить", True, COLORS["text"])
+        self.screen.blit(skip_txt, skip_txt.get_rect(center=skip_rect.center))
+        for rect, label, _kind in panel_targets:
+            pulse = config.sy(4) + int(math.sin(self.anim * 3.5) * config.sy(2))
+            frame = rect.inflate(pulse * 2, pulse * 2)
+            pygame.draw.rect(self.screen, COLORS["accent"], frame, 2, border_radius=16)
 
     def quit_game(self):
         self.game.save()
         pygame.quit()
         sys.exit(0)
 
-    def _menu_setting_row(self, x, y, w, prefix, value, color, callback):
+    def _menu_setting_row(self, x, y, w, prefix, value, color, callback, desc=None):
         row_h = config.sy(42)
         btn_w = config.sx(98)
         pad = config.sx(12)
@@ -892,12 +1146,24 @@ class App:
             lambda: (self.audio.play("ui"), callback()),
             primary=False,
         )
-        return y + row_h + config.sy(10)
+        next_y = y + row_h + config.sy(8)
+        if desc:
+            line_h = config.sy(16)
+            lines = wrap_text_lines(self.fonts["sm"], desc, w - pad * 2)[:3]
+            for i, line in enumerate(lines):
+                self.screen.blit(
+                    self.fonts["sm"].render(line, True, COLORS["text_dim"]),
+                    (x + pad, next_y + i * line_h),
+                )
+            next_y += len(lines) * line_h + config.sy(10)
+        else:
+            next_y += config.sy(2)
+        return next_y
 
     def draw_menu(self):
         accent = COLORS["accent"]
         panel_w = config.sx(520)
-        panel_h = config.sy(560)
+        panel_h = config.sy(620)
         gap = config.sx(28)
         total_w = panel_w * 2 + gap
         footer_space = config.sy(34)
@@ -954,12 +1220,34 @@ class App:
         btn_x = menu_content.x + pad
         y = menu_content.y + config.sy(6)
 
-        diff_name = get_difficulty()["name"]
-        y = self._menu_setting_row(btn_x, y, inner_w, "Сложность", diff_name, COLORS["danger"], self.game.cycle_difficulty)
+        diff = get_difficulty()
+        y = self._menu_setting_row(
+            btn_x, y, inner_w, "Сложность", diff["name"], COLORS["danger"],
+            self.game.cycle_difficulty, desc=difficulty_desc(),
+        )
 
-        from mutators import oath_label
-        oath_name = oath_label(self.game.meta.get("oath", "none"))
-        y = self._menu_setting_row(btn_x, y, inner_w, "Клятва", oath_name, COLORS["accent_warm"], self.game.cycle_oath)
+        from mutators import oath_desc, oath_label
+        oath_id = self.game.meta.get("oath", "none")
+        y = self._menu_setting_row(
+            btn_x, y, inner_w, "Клятва", oath_label(oath_id), COLORS["accent_warm"],
+            self.game.cycle_oath, desc=oath_desc(oath_id),
+        )
+
+        from guardians import GUARDIAN_DEFS, guardian_desc, guardian_label
+        gid = self.game.meta.get("guardian", "steel")
+        ginfo = GUARDIAN_DEFS.get(gid, GUARDIAN_DEFS["steel"])
+        y = self._menu_setting_row(
+            btn_x, y, inner_w, "Архетип", guardian_label(gid), ginfo["color"],
+            self.game.cycle_guardian, desc=guardian_desc(gid),
+        )
+
+        from ascension import ascension_desc, ascension_label, ascension_level
+        asc = ascension_level(self.game.meta)
+        asc_desc = ascension_desc(asc) if self.game.meta.get("wins", 0) >= 1 else "Откроется после первой победы."
+        y = self._menu_setting_row(
+            btn_x, y, inner_w, "Вознесение", ascension_label(asc), COLORS["gold"],
+            self.game.cycle_ascension, desc=asc_desc,
+        )
 
         if self.confirm_new_run:
             panel = pygame.Rect(btn_x, y, inner_w, config.sy(180))
@@ -997,7 +1285,9 @@ class App:
         else:
             y += config.sy(4)
 
-        draw_button(self.screen, self.fonts, pygame.Rect(btn_x, y, inner_w, btn_h), "Новый Забег", self.mouse, self.buttons, self.request_new_run)
+        new_run_rect = pygame.Rect(btn_x, y, inner_w, btn_h)
+        self.highlight_rects["menu_new_run"] = new_run_rect
+        draw_button(self.screen, self.fonts, new_run_rect, "Новый Забег", self.mouse, self.buttons, self.request_new_run)
         y += btn_h + config.sy(10)
 
         from datetime import date
@@ -1024,8 +1314,9 @@ class App:
         col_w = (inner_w - config.sx(12)) // 2
         grid = [
             ("Обучение", lambda: self.game.replay_tutorial()),
-            ("Справка", lambda: setattr(self.game, "screen", HELP)),
-            ("Коллекция", lambda: setattr(self.game, "screen", CODEX)),
+            ("Справка", self.open_help),
+            ("Коллекция", self.open_codex),
+            ("Статистика", lambda: setattr(self.game, "screen", STATS)),
             ("Достижения", lambda: setattr(self.game, "screen", ACHIEVEMENTS)),
             ("Настройки", lambda: setattr(self.game, "screen", SETTINGS)),
             ("Выход", self.quit_game),
@@ -1054,8 +1345,92 @@ class App:
         draw_top_bar(self.screen, self.fonts, "Достижения", "Награды за подвиги Стража", accent=accent)
         draw_achievements_grid(self.screen, self.fonts, self.game.meta, accent=accent)
 
+    def draw_stats(self):
+        from ascension import ascension_label, ascension_level
+        from guardians import guardian_label
+
+        accent = COLORS["gold"]
+        draw_top_bar(self.screen, self.fonts, "Статистика", "Сводка всех забегов", accent=accent)
+        meta = self.game.meta
+        panel = pygame.Rect(config.sx(80), config.sy(100), config.SCREEN_WIDTH - config.sx(160), config.SCREEN_HEIGHT - config.sy(180))
+        draw_panel(self.screen, panel, fill=(14, 18, 28), border=COLORS["panel_border"], radius=16, alpha=220, shadow=True)
+        from achievements import ACHIEVEMENT_DEFS
+        from cards import all_card_ids
+        from relics import RELIC_DEFS
+
+        diff_name = {"border": "Рубеж", "harsh": "Суровый Рубеж", "nightmare": "Кошмар"}.get(meta.get("difficulty", "harsh"), "Рубеж")
+        asc = ascension_level(meta)
+        lines = [
+            ("Забеги и победы", [
+                f"Всего забегов: {meta.get('runs', 0)}",
+                f"Побед: {meta.get('wins', 0)}",
+                f"Рекорд: акт {meta.get('best_act', 0)} · боёв {meta.get('best_combats', 0)}",
+            ]),
+            ("Профиль", [
+                f"Архетип: {guardian_label(meta.get('guardian', 'steel'))}",
+                f"Вознесение: {ascension_label(asc) if meta.get('wins', 0) >= 1 else '— (нет побед)'}",
+                f"Сложность: {diff_name}",
+            ]),
+            ("Коллекция", [
+                f"Артефактов: {len(meta.get('relics_found', []))}/{len(RELIC_DEFS)}",
+                f"Карт: {len(meta.get('cards_found', []))}/{len(all_card_ids())}",
+                f"Достижений: {len(meta.get('achievements', []))}/{len(ACHIEVEMENT_DEFS)}",
+            ]),
+        ]
+        y = panel.y + config.sy(20)
+        for heading, items in lines:
+            self.screen.blit(self.fonts["md"].render(heading, True, accent), (panel.x + config.sx(24), y))
+            y += config.sy(28)
+            for item in items:
+                self.screen.blit(self.fonts["sm"].render(item, True, COLORS["text"]), (panel.x + config.sx(36), y))
+                y += config.sy(24)
+            y += config.sy(12)
+        draw_button(
+            self.screen, self.fonts,
+            codex_back_button_rect(),
+            "Назад", self.mouse, self.buttons,
+            lambda: setattr(self.game, "screen", MENU),
+            primary=False,
+        )
+
+    def draw_blessing_pick(self):
+        from blessings import BLESSING_DEFS, blessing_desc, blessing_label
+
+        accent = COLORS["gold"]
+        draw_top_bar(self.screen, self.fonts, "Благословение", "Рубеж дарует силу победителю", stats=self.run_stats(self.game.run), accent=accent)
+        choices = self.game.blessing_choices
+        panel = pygame.Rect(80, 118, config.SCREEN_WIDTH - 160, 400)
+        content = draw_section_panel(self.screen, panel, "Выбери одно благословение", self.fonts, accent=accent, alpha=190)
+        slot_w = (content.width - 80) // max(1, len(choices))
+        for i, bid in enumerate(choices):
+            info = BLESSING_DEFS.get(bid, {})
+            rx = content.x + 20 + i * slot_w
+            box = pygame.Rect(rx, content.y + 16, slot_w - 20, content.height - 40)
+            color = info.get("color", accent)
+            draw_panel(self.screen, box, fill=(12, 16, 24), border=color, radius=14, alpha=220, shadow=False)
+            title = self.fonts["md"].render(blessing_label(bid), True, color)
+            self.screen.blit(title, title.get_rect(center=(box.centerx, box.y + 36)))
+            wrap_text(self.screen, self.fonts["sm"], blessing_desc(bid), box.x + 12, box.y + 64, box.width - 24, COLORS["text_dim"], line_h=16)
+            draw_button(
+                self.screen, self.fonts,
+                pygame.Rect(box.x + 12, box.bottom - 44, box.width - 24, 36),
+                "Принять", self.mouse, self.buttons,
+                lambda idx=i: (self.audio.play("power"), self.game.pick_blessing(idx)),
+            )
+
+    def open_help(self):
+        self.game.screen = HELP
+        self.help_scroll_y = 0
+        self.audio.play("ui")
+
+    def open_codex(self):
+        self.game.screen = CODEX
+        self.codex_scroll_y = 0
+        self.audio.play("ui")
+
     def set_codex_tab(self, tab):
         self.codex_tab = tab
+        self.codex_scroll_y = 0
         self.audio.play("ui")
 
     def draw_codex(self):
@@ -1071,14 +1446,25 @@ class App:
         draw_top_bar(self.screen, self.fonts, title, hint, accent=accent)
         draw_codex_tabs(self.screen, self.fonts, self.mouse, self.buttons, self.codex_tab, self.set_codex_tab, accent=accent)
         if self.codex_tab == "relics":
-            draw_relic_codex(self.screen, self.fonts, self.game.meta, self.mouse, self.buttons, accent=accent)
+            content, self.codex_scroll_y, max_scroll = draw_relic_codex(
+                self.screen, self.fonts, self.game.meta, self.mouse, self.buttons,
+                accent=accent, scroll_y=self.codex_scroll_y,
+            )
         elif self.codex_tab == "potions":
-            draw_potion_codex(self.screen, self.fonts, self.game.meta, self.mouse, draw_potion_icon, accent=COLORS["success"])
+            content, self.codex_scroll_y, max_scroll = draw_potion_codex(
+                self.screen, self.fonts, self.game.meta, self.mouse, draw_potion_icon,
+                accent=COLORS["success"], scroll_y=self.codex_scroll_y,
+            )
         else:
-            draw_card_codex(self.screen, self.fonts, self.game.meta, self.mouse, draw_card_type_icon, accent=COLORS["accent"])
+            content, self.codex_scroll_y, max_scroll = draw_card_codex(
+                self.screen, self.fonts, self.game.meta, self.mouse, draw_card_type_icon,
+                accent=COLORS["accent"], scroll_y=self.codex_scroll_y,
+            )
+        self.codex_scroll_y = min(self.codex_scroll_y, max_scroll)
+        self.codex_scroll_rect = content
         draw_button(
             self.screen, self.fonts,
-            pygame.Rect(config.SCREEN_WIDTH // 2 - 100, 630, 200, 44),
+            codex_back_button_rect(),
             "Назад", self.mouse, self.buttons,
             lambda: setattr(self.game, "screen", MENU),
             primary=False,
@@ -1087,22 +1473,25 @@ class App:
     def draw_help(self):
         accent = COLORS["accent"]
         draw_top_bar(self.screen, self.fonts, "Справка", get_difficulty()["name"], accent=accent)
-
-        rules = pygame.Rect(60, 96, 740, 580)
-        rules_content = draw_section_panel(self.screen, rules, "Правила", self.fonts, accent=accent, alpha=210)
         lines = [
             "Карта — выбирай светящиеся узлы. Первые 2 боя — лёгкие, после развилки — сложнее.",
             "Красные карты — атака, синие — блок, фиолетовые — силы на бой.",
             "Энергия: 3 за ход. Карт в руке: 4. Блок сгорает каждый ход.",
             "Враги показывают намерение — готовь защиту заранее.",
-            "Tab — сменить цель. E — конец хода. 1–9 — сыграть карту.",
+            "Tab/клик — сменить цель. 1–9 — сыграть карту. Esc в бою — в меню с сохранением.",
             "Награда: 1–3 выбор, S — пропуск. Реликвия: 1–3, S — отказ.",
             f"Привал: 1 лечение, 2 улучшение, 3 удаление, 4 сварить зелье (−{REST_BREW_COST} зол.).",
             "Лавка: карты, зелья, артефакт, лечение (H), удаление (R).",
             "Зелья (до 3 слотов, по 3 использования): Z/X/C в бою, 1 за ход. Лавка, элиты, привал (4).",
             "Клятва в меню — опциональный модификатор обычного забега.",
             "Ежедневный забег — один сид, модификатор дня, победа раз в день.",
-            "4 акта: лес → пустыня → лёд → руины. Финальный босс — Владыка Пустоты.",
+            "5 актов: лес → пустыня → лёд → руины → Сердце Пустоты. Финальный босс — Сердце Пустоты.",
+            "Архетип: Стальной, Теневой или Пламенный — смена в меню перед забегом.",
+            "Благословения: выбор после победы над боссом — до 8 уникальных бонусов.",
+            "Элиты могут иметь аффиксы: броня, шипы, регенерация, вампиризм.",
+            "Узлы «Сокровище» на карте — золото, карта или реликвия.",
+            "Ожог — DoT как яд; Пламенный Страж усиливает ожог.",
+            "Вознесение I–V открывается после первой победы — усиливает врагов и охотников.",
             "Уязвимость: враг получает +50% урона. Слабость/яд — ослабляют врага.",
             "Боссы впадают в ярость ниже 50% HP — меняют тактику.",
             "С 5-го хода боя враги получают +1 силы каждый ход — «давление Рубежа» (на Кошмаре — с 4-го).",
@@ -1110,7 +1499,7 @@ class App:
             "Проклятия засоряют колоду; снять — на привале или в лавке (R).",
             "Чем больше боёв в забеге — тем сильнее враги. Элиты иногда с соратником.",
             "Акт II–III: опасные враги. Наведи на узел — увидишь уровень угрозы.",
-            "Колода: ←/→ страницы, Esc закрыть. Карта: перетаскивание, легенда типов внизу.",
+            "Колода: ←/→ страницы, Esc закрыть. Карта: перетаскивание, легенда типов справа.",
             "Enter — продолжить/новый забег. M — меню с экрана победы.",
             "Элиты и боссы опасны. Привалов мало — лечись экономно.",
             "Элиты и боссы дают реликвии — пассивные артефакты забега.",
@@ -1118,31 +1507,15 @@ class App:
             "«Рубеж» — проще, «Суровый Рубеж» — для опытных, «Кошмар» — экстрим. Смена в меню.",
             "Забег сохраняется автоматически — «Продолжить» в меню.",
         ]
-        for i, line in enumerate(lines):
-            self.screen.blit(self.fonts["md"].render(line, True, COLORS["text"]), (rules_content.x + 8, rules_content.y + 8 + i * 28))
-
-        cards_panel = pygame.Rect(rules_content.x, rules_content.y + 196, rules_content.width, 150)
-        draw_panel(self.screen, cards_panel, fill=(12, 16, 24), border=COLORS["panel_border"], radius=12, alpha=200, shadow=False)
-        self.screen.blit(self.fonts["sm"].render("Типы карт", True, accent), (cards_panel.x + 14, cards_panel.y + 10))
-        for i, (label, color_key) in enumerate((("Атака", "card_attack"), ("Навык", "card_skill"), ("Сила", "card_power"), ("Проклятие", "card_curse"))):
-            cx = cards_panel.x + 40 + (i % 2) * 210
-            cy = cards_panel.y + 58 + (i // 2) * 44
-            chip = pygame.Rect(cx - 28, cy - 18, 56, 36)
-            pygame.draw.rect(self.screen, COLORS[color_key], chip, border_radius=8)
-            self.screen.blit(self.fonts["sm"].render(label, True, COLORS["text"]), (cx + 36, cy - 8))
-
-        ref_panel = pygame.Rect(820, 96, 400, 580)
-        ref_content = draw_section_panel(self.screen, ref_panel, "Узлы карты", self.fonts, accent=accent, alpha=210)
-        for i, (nt, label) in enumerate(NODE_TYPES.items()):
-            cx = ref_content.x + 36 + (i % 2) * 170
-            cy = ref_content.y + 24 + (i // 2) * 72
-            node_color = NODE_COLORS.get(nt, accent)
-            draw_map_node(self.screen, cx, cy, nt, node_color, True, False, self.anim, draw_node_icon)
-            self.screen.blit(self.fonts["sm"].render(label, True, COLORS["text_dim"]), (cx + 34, cy - 8))
-
+        content, self.help_scroll_y, max_scroll = draw_help_screen(
+            self.screen, self.fonts, lines, self.mouse, self.anim, draw_node_icon,
+            accent=accent, scroll_y=self.help_scroll_y,
+        )
+        self.help_scroll_y = min(self.help_scroll_y, max_scroll)
+        self.help_scroll_rect = content
         draw_button(
             self.screen, self.fonts,
-            pygame.Rect(config.SCREEN_WIDTH // 2 - 100, 690, 200, 44),
+            codex_back_button_rect(),
             "Назад", self.mouse, self.buttons,
             lambda: setattr(self.game, "screen", MENU),
             primary=False,
@@ -1286,14 +1659,16 @@ class App:
         x_off = self.map_scroll_x
         y_off = self.map_scroll_y
         clip = self.map_clip_rect()
+        label_strip = self.map_label_strip_rect()
+        draw_map_depth_guides(self.screen, self.fonts, label_strip, nodes, run["map"], x_off, y_off, accent)
         prev_clip = self.screen.get_clip()
         self.screen.set_clip(clip)
         draw_map_grid_guides(self.screen, clip, run["map"], x_off, y_off, accent)
-        draw_map_depth_guides(self.screen, self.fonts, clip, nodes, run["map"], x_off, y_off, accent)
         draw_map_service_beacons(self.screen, nodes, self.fonts, x_off, y_off, self.anim)
         draw_map_paths(self.screen, nodes, accent, self.anim, x_offset=x_off, y_offset=y_off)
 
         node_rects = []
+        available_rects = []
         current = (self.game.run.get("current_node") or {}).get("id")
         hovered_node = None
         hit_r = self.map_node_hit_radius()
@@ -1328,6 +1703,8 @@ class App:
                 pygame.draw.circle(ring, (*COLORS["gold"], 120), (pulse + 2, pulse + 2), pulse, 2)
                 self.screen.blit(ring, (nx - pulse - 2, ny - pulse - 2))
             node_rects.append(nr)
+            if active:
+                available_rects.append(pygame.Rect(nx - hit_r, ny - hit_r, hit_r * 2, hit_r * 2))
         self.screen.set_clip(prev_clip)
 
         if node_rects:
@@ -1335,6 +1712,15 @@ class App:
             for nr in node_rects[1:]:
                 box = box.union(nr)
             self.highlight_rects["map_nodes"] = box
+        if available_rects:
+            self.highlight_rect_lists["map_available_nodes"] = list(available_rects)
+            box = available_rects[0].copy()
+            for nr in available_rects[1:]:
+                box = box.union(nr)
+            self.highlight_rects["map_available_nodes"] = box
+        elif node_rects:
+            self.highlight_rect_lists["map_available_nodes"] = list(node_rects)
+            self.highlight_rects["map_available_nodes"] = self.highlight_rects["map_nodes"]
 
         relics = run.get("relics", [])
         if relics:
@@ -1362,6 +1748,14 @@ class App:
             )
         draw_map_legend(self.screen, self.fonts, self.map_legend_rect(), accent)
         self.highlight_rects["map_panel"] = map_rect
+        if self.tutorial_active():
+            step = self.game.tutorial.step
+            if step and step.get("highlight") == "map_available_nodes":
+                focus_key = (self.game.tutorial.step_index, tuple((r.x, r.y) for r in available_rects))
+                if getattr(self, "_tutorial_map_focus", None) != focus_key:
+                    self._tutorial_map_focus = focus_key
+                    self._map_layout_key = None
+                    self.refresh_map_layout(recenter=True)
 
     def draw_card_ui(self, card, x, y, w, h, playable, on_click, hand_idx=None, hotkey=None):
         shake = 0
@@ -1529,8 +1923,10 @@ class App:
                 if hit_zone.collidepoint(self.mouse):
                     pygame.draw.rect(self.screen, COLORS["gold"], hit_zone, 2, border_radius=12)
                 self.buttons.add(hit_zone, pick_target, primary=False)
-            if is_target and enemy.get("intent"):
-                self.highlight_rects["enemy_intent"] = pygame.Rect(rect.right - 138, rect.y + 8, 128, 22)
+            if enemy.get("intent"):
+                intent_rect = pygame.Rect(rect.right - 138, rect.y + 8, 128, 22)
+                if is_target or "enemy_intent" not in self.highlight_rects:
+                    self.highlight_rects["enemy_intent"] = intent_rect
 
             fx_positions[enemy_key] = enemy_center
             draw_arena_character(self.screen, sx, sy, 96, 100, "enemy", enemy.get("id", "slime"), enemy["color"], is_acting)
@@ -1635,7 +2031,9 @@ class App:
             self.highlight_rects["reward_cards"] = box
         actions = layout_bottom_action_bar()
         draw_section_panel(self.screen, actions, "Решение", self.fonts, accent=COLORS["panel_border"], alpha=200)
-        draw_button(self.screen, self.fonts, pygame.Rect(actions.centerx - config.sx(110), actions.y + 4, config.sx(220), config.sy(36)), "Пропустить", self.mouse, self.buttons, lambda: self.game.pick_reward(-1), primary=False)
+        skip_rect = pygame.Rect(actions.centerx - config.sx(110), actions.y + 4, config.sx(220), config.sy(36))
+        self.highlight_rects["reward_skip"] = skip_rect.inflate(config.sx(4), config.sy(4))
+        draw_button(self.screen, self.fonts, skip_rect, "Пропустить", self.mouse, self.buttons, lambda: self.game.pick_reward(-1), primary=False)
 
     def draw_rest(self, accent):
         from cards import removable_cards
@@ -1652,7 +2050,7 @@ class App:
         draw_panel(self.screen, fire, fill=(20, 14, 10), border=COLORS["accent_warm"], radius=80, alpha=200, shadow=False)
         draw_rest_campfire(self.screen, fire.x + 20, fire.y + 20, fire.width - 40, fire.height - 40)
         draw_button(self.screen, self.fonts, pygame.Rect(content.x + 24, content.bottom - 238, content.width - 48, 48), f"Отдохнуть (+{heal} HP)", self.mouse, self.buttons, self.game.rest_heal)
-        self.highlight_rects["rest_options"] = pygame.Rect(content.x + 24, content.bottom - 178, content.width - 48, 120).inflate(0, 20)
+        self.highlight_rects["rest_options"] = pygame.Rect(content.x + 24, content.bottom - 238, content.width - 48, 178)
         half_w = (content.width - 56) // 2
         draw_button(self.screen, self.fonts, pygame.Rect(content.x + 24, content.bottom - 178, half_w, 48), "Улучшить карту", self.mouse, self.buttons, self.game.rest_upgrade, primary=False)
         remove_cb = self.game.rest_remove if can_remove else lambda: None
@@ -2012,11 +2410,9 @@ class App:
             lambda: (self.audio.play("ui"), self.game.shop_remove()) if can_remove else self.audio.play("buzz"),
             primary=False,
         )
-        draw_button(
-            self.screen, self.fonts,
-            pygame.Rect(footer.right - btn_w - 12, footer.y + 4, btn_w, 36),
-            "Уйти", self.mouse, self.buttons, self.leave_shop,
-        )
+        leave_rect = pygame.Rect(footer.right - btn_w - 12, footer.y + 4, btn_w, 36)
+        self.highlight_rects["shop_leave"] = leave_rect.inflate(config.sx(4), config.sy(4))
+        draw_button(self.screen, self.fonts, leave_rect, "Уйти", self.mouse, self.buttons, self.leave_shop)
 
     def draw_event(self, accent=None):
         accent = accent or COLORS["accent_warm"]

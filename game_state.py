@@ -2,7 +2,7 @@ from cards import can_add_card_to_deck, deck_card_ids, normalize_card, removable
 from combat import CombatState
 from config import ACTS, clear_run_save, daily_seed, load_meta, save_meta, save_run_state
 from difficulty import get_difficulty, gold_reward, init_difficulty
-from enemies import roll_ambush_enemies, roll_battle_enemies, roll_boss
+from enemies import roll_ambush_enemies, roll_battle_enemies, roll_boss, roll_hunter_fight
 from mapgen import flatten_map, generate_map, get_act_info, get_node, layout_map, roll_event, visit_node
 from relics import add_relic, apply_combat_end, discover_relic, roll_relic_rewards, shop_inventory, sync_discovered_relics
 from achievements import check_meta_achievements, on_boss_relic, on_cleanse, on_daily_win, on_potion_used, on_rest_brew, on_rest_upgrade, on_shop_remove, on_victory, set_achievement_listener
@@ -13,6 +13,8 @@ HELP = "help"
 SETTINGS = "settings"
 CODEX = "codex"
 ACHIEVEMENTS = "achievements"
+STATS = "stats"
+BLESSING_PICK = "blessing_pick"
 TUTORIAL = "tutorial"
 MAP = "map"
 COMBAT = "combat"
@@ -115,13 +117,16 @@ class Game:
         save_meta(self.meta)
         self.combats_won = 0
         d = get_difficulty()
+        from ascension import ascension_level
+        guardian = self.meta.get("guardian", "steel")
+        asc = 0 if daily else ascension_level(self.meta)
         self.run = {
             "hp": d["player_hp"],
             "max_hp": d["player_max_hp"],
             "gold": d["starting_gold"],
-            "deck": starter_deck(),
+            "deck": starter_deck(guardian),
             "act": 0,
-            "map": generate_map(0),
+            "map": generate_map(0, ascension=asc),
             "current_node": None,
             "bonus_energy": 0,
             "relics": [],
@@ -129,6 +134,10 @@ class Game:
             "potions_used": 0,
             "mutators": [],
             "daily": daily,
+            "guardian": guardian,
+            "ascension": asc,
+            "hunters_killed": 0,
+            "blessings": [],
         }
         if daily:
             from mutators import roll_daily_mutators
@@ -171,7 +180,33 @@ class Game:
             elif t == "event":
                 self.current_event = roll_event(self.run["act"])
                 self.screen = EVENT
+            elif t == "treasure":
+                self._open_treasure()
             self._persist()
+
+    def _open_treasure(self):
+        import random
+        from blessings import treasure_gold_mult
+        self.run["treasures_opened"] = self.run.get("treasures_opened", 0) + 1
+        gain = random.randint(38, 58)
+        if "treasure_compass" in self.run.get("relics", []):
+            gain += 25
+        gain = int(gain * treasure_gold_mult(self.run))
+        self.run["gold"] += gain
+        self.last_gold_gain = gain
+        parts = [f"+{gain} золота"]
+        if random.random() < 0.28:
+            from relics import grant_random_relic
+            grant_random_relic(self.run)
+            parts.append("реликвия")
+        elif random.random() < 0.45:
+            self.reward_cards = roll_card_rewards(1, self.run["act"], deck_card_ids(self.run["deck"]), self.run.get("guardian"))
+            self.screen = REWARD
+            self.event_result = " · ".join(parts)
+            self._persist()
+            return
+        self.event_result = f"Сокровище: {' · '.join(parts)}"
+        self.screen = MAP
 
     def start_combat(self, elite=False, ambush=False):
         biome = get_act_info(self.run["act"])["biome"]
@@ -179,25 +214,38 @@ class Game:
         from mapgen import map_node_tier
 
         mods = run_modifiers(self.run)
+        asc = self.run.get("ascension", 0)
         node = self.run.get("current_node") or {}
         map_tier = node.get("tier") or map_node_tier(node.get("row", 99))
         if ambush:
-            enemies = roll_ambush_enemies(biome, self.run["act"], self.combats_won, mods)
+            enemies = roll_ambush_enemies(biome, self.run["act"], self.combats_won, mods, ascension=asc)
         else:
             enemies = roll_battle_enemies(
-                biome, elite, self.run["act"], self.combats_won, mods, map_tier=map_tier,
+                biome, elite, self.run["act"], self.combats_won, mods, map_tier=map_tier, ascension=asc,
             )
         self.combat = CombatState(self.run, enemies, self.meta)
+        burn_start = self.run.pop("next_combat_burn", 0)
+        if burn_start:
+            from enemies import add_status
+            for e in enemies:
+                add_status(e, "burn", burn_start)
+            self.combat.log(f"⚠ Враги горят — {burn_start} ожога!")
         if ambush:
             self.combat.log("⚠ Засада! Враги ослаблены, но их несколько.")
         elif any(e.get("hunter") for e in enemies):
             self.combat.log("⚠ Охотник Рубежа — особая добыча, особая опасность!")
+        elif elite and any(e.get("affix") for e in enemies):
+            from enemies import affix_label, AFFIX_DEFS
+            for e in enemies:
+                if e.get("affix"):
+                    info = AFFIX_DEFS.get(e["affix"], {})
+                    self.combat.log(f"Элита: {affix_label(e['affix'])} — {info.get('desc', '')}")
         self.combat.start_turn()
         self.screen = COMBAT
 
     def start_boss(self):
         from mutators import run_modifiers
-        enemies = roll_boss(self.run["act"], self.combats_won, run_modifiers(self.run))
+        enemies = roll_boss(self.run["act"], self.combats_won, run_modifiers(self.run), ascension=self.run.get("ascension", 0))
         self.combat = CombatState(self.run, enemies, self.meta)
         self.combat.start_turn()
         self.screen = COMBAT
@@ -211,10 +259,18 @@ class Game:
         self.run["potions"] = list(self.combat.potions)
         node = self.run.get("current_node") or {}
         is_hunter = any(e.get("hunter") for e in self.combat.enemies)
+        if self.combat.won and is_hunter:
+            self.run["hunters_killed"] = self.run.get("hunters_killed", 0) + 1
+            from achievements import on_hunter_slain
+            on_hunter_slain(self.meta, self.run)
         reward_type = "hunter" if is_hunter else node.get("type", "battle")
         gain = gold_reward(reward_type)
         from mutators import gold_mult, run_modifiers
-        gain = max(8, int(gain * gold_mult(run_modifiers(self.run))))
+        from ascension import ascension_gold_mult
+        from blessings import blessing_gold_mult, hunter_gold_bonus
+        gain = max(8, int(gain * gold_mult(run_modifiers(self.run)) * ascension_gold_mult(self.run.get("ascension", 0)) * blessing_gold_mult(self.run)))
+        if is_hunter:
+            gain += hunter_gold_bonus(self.run)
         self.last_gold_gain = gain
         self.last_potion_gain = None
         self.run["gold"] += gain
@@ -259,7 +315,7 @@ class Game:
                         self.last_potion_gain = POTION_DEFS[pid]["name"]
                 self._open_relic_reward("card_reward")
             else:
-                self.reward_cards = roll_card_rewards(3, self.run["act"], deck_card_ids(self.run["deck"]))
+                self.reward_cards = roll_card_rewards(3, self.run["act"], deck_card_ids(self.run["deck"]), self.run.get("guardian"))
                 self.screen = REWARD
         else:
             self._record_run_stats(False)
@@ -280,17 +336,26 @@ class Game:
     def _resolve_post_relic(self):
         action = self.post_relic_action
         self.relic_choices = []
+        self.blessing_choices = []
         self.post_relic_action = None
         if action == "card_reward":
-            self.reward_cards = roll_card_rewards(3, self.run["act"], deck_card_ids(self.run["deck"]))
+            self.reward_cards = roll_card_rewards(3, self.run["act"], deck_card_ids(self.run["deck"]), self.run.get("guardian"))
             self.screen = REWARD
         elif action == "boss_advance":
             self.run["act"] += 1
             heal = max(8, int(self.run["max_hp"] * 0.15))
             self.run["hp"] = min(self.run["max_hp"], self.run["hp"] + heal)
-            self.run["map"] = generate_map(self.run["act"])
+            from ascension import ascension_level
+            asc = self.run.get("ascension", 0)
+            self.run["map"] = generate_map(self.run["act"], ascension=asc)
             layout_map(self.run["map"])
-            self.screen = ACT_TRANSITION
+            from blessings import roll_blessing_choices
+            owned = self.run.setdefault("blessings", [])
+            self.blessing_choices = roll_blessing_choices(owned)
+            if self.blessing_choices:
+                self.screen = BLESSING_PICK
+            else:
+                self.screen = ACT_TRANSITION
         else:
             self.screen = MAP
         self._persist()
@@ -308,7 +373,8 @@ class Game:
 
     def rest_heal(self):
         d = get_difficulty()
-        heal = max(d["rest_heal"], int(self.run["max_hp"] * d["rest_heal_pct"]))
+        from blessings import rest_heal_bonus
+        heal = max(d["rest_heal"], int(self.run["max_hp"] * d["rest_heal_pct"])) + rest_heal_bonus(self.run)
         self.run["hp"] = min(self.run["max_hp"], self.run["hp"] + heal)
         self.screen = MAP
         self.tutorial.advance("rest_choice")
@@ -402,6 +468,18 @@ class Game:
         self.screen = MAP
         self._persist()
 
+    def pick_blessing(self, index):
+        if 0 <= index < len(self.blessing_choices):
+            bid = self.blessing_choices[index]
+            blessings = self.run.setdefault("blessings", [])
+            if bid not in blessings:
+                blessings.append(bid)
+                if "blessing_chalice" in self.run.get("relics", []):
+                    self.run["hp"] = min(self.run["max_hp"], self.run["hp"] + 5)
+        self.blessing_choices = []
+        self.screen = ACT_TRANSITION
+        self._persist()
+
     def pick_relic(self, index):
         if 0 <= index < len(self.relic_choices):
             rid = self.relic_choices[index]
@@ -492,6 +570,39 @@ class Game:
             self.start_combat(ambush=True)
             self._persist()
             return
+        if self.run.get("pending_hunter_fight"):
+            self.run["pending_hunter_fight"] = False
+            from mutators import run_modifiers
+            enemies = roll_hunter_fight(
+                self.run["act"], self.combats_won, run_modifiers(self.run), self.run.get("ascension", 0),
+            )
+            self.combat = CombatState(self.run, enemies, self.meta)
+            self.combat.log("⚠ Охотник перехватил тебя на тропе!")
+            self.combat.start_turn()
+            self.screen = COMBAT
+            self._persist()
+            return
+        if self.run.get("pending_blessing_pick"):
+            self.run["pending_blessing_pick"] = False
+            from blessings import roll_blessing_choices
+            self.blessing_choices = roll_blessing_choices(self.run.get("blessings", []), count=1)
+            if self.blessing_choices:
+                bid = self.blessing_choices[0]
+                blessings = self.run.setdefault("blessings", [])
+                if bid not in blessings:
+                    blessings.append(bid)
+                self.event_result = f"Благословение: {__import__('blessings').blessing_label(bid)}"
+            self.blessing_choices = []
+            self.screen = MAP
+            self._persist()
+            return
+        if self.run.get("pending_burn_ambush"):
+            self.run["pending_burn_ambush"] = False
+            self.run["next_combat_burn"] = 3
+            self.event_result = "Следующий бой: враги начнут с 3 ожога"
+            self.screen = MAP
+            self._persist()
+            return
         if self.run.get("pending_event_reward") == "rare":
             from cards import roll_rare_card_reward
             self.reward_cards = roll_rare_card_reward(deck_card_ids(self.run.get("deck", [])))
@@ -560,6 +671,16 @@ class Game:
     def cycle_oath(self):
         from mutators import cycle_oath
         cycle_oath(self.meta)
+        save_meta(self.meta)
+
+    def cycle_guardian(self):
+        from guardians import cycle_guardian
+        cycle_guardian(self.meta)
+        save_meta(self.meta)
+
+    def cycle_ascension(self):
+        from ascension import cycle_ascension
+        cycle_ascension(self.meta)
         save_meta(self.meta)
 
     def replay_tutorial(self):
